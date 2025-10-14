@@ -1,6 +1,6 @@
 """Airtable implementation of the database interface."""
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from pyairtable import Api
 
@@ -131,7 +131,7 @@ class AirtableDatabase(DatabaseInterface):
             if record_id:
                 self.emails_table.update(record_id, {
                     "Deleted": True,
-                    "Deleted At": datetime.utcnow().isoformat() + "Z"
+                    "Deleted At": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                 })
                 logger.info(f"Marked email {email_id} as deleted")
         except Exception as e:
@@ -145,7 +145,7 @@ class AirtableDatabase(DatabaseInterface):
             if record_id:
                 self.tasks_table.update(record_id, {
                     "Deleted": True,
-                    "Deleted At": datetime.utcnow().isoformat() + "Z"
+                    "Deleted At": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                 })
                 logger.info(f"Marked task {task_id} as deleted")
         except Exception as e:

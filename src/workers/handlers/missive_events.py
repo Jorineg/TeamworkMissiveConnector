@@ -1,5 +1,5 @@
 """Missive event handler."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List
 
 from src.db.models import Email, Attachment
@@ -132,7 +132,7 @@ class MissiveEventHandler:
             body_text=body_text,
             body_html=body_html,
             sent_at=sent_at,
-            received_at=received_at or sent_at or datetime.utcnow(),
+            received_at=received_at or sent_at or datetime.now(timezone.utc),
             labels=labels,
             deleted=deleted,
             deleted_at=deleted_at,

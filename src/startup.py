@@ -13,8 +13,11 @@ from src.db.interface import DatabaseInterface
 from src.db.airtable_impl import AirtableDatabase
 from src.db.postgres_impl import PostgresDatabase
 from src.db.models import Checkpoint
+from src.db.airtable_setup import AirtableSetup
 from src.connectors.teamwork_client import TeamworkClient
 from src.connectors.missive_client import MissiveClient
+from src.webhooks.teamwork_webhooks import TeamworkWebhookManager
+from src.webhooks.missive_webhooks import MissiveWebhookManager
 
 
 class StartupManager:
@@ -66,6 +69,37 @@ class StartupManager:
         except Exception as e:
             logger.error(f"Failed to start ngrok tunnel: {e}", exc_info=True)
             return None
+    
+    def ensure_airtable_tables(self) -> bool:
+        """Ensure Airtable tables exist, creating them if necessary."""
+        if settings.DB_BACKEND != "airtable":
+            return True  # Not using Airtable, skip
+        
+        logger.info("Setting up Airtable tables...")
+        setup = AirtableSetup()
+        return setup.ensure_tables_exist()
+    
+    def configure_webhooks(self, public_url: str) -> None:
+        """Automatically configure webhooks with the given URL."""
+        if not public_url:
+            logger.warning("No public URL available. Skipping webhook configuration.")
+            return
+        
+        teamwork_webhook_url = f"{public_url}/webhook/teamwork"
+        missive_webhook_url = f"{public_url}/webhook/missive"
+        
+        # Configure Teamwork webhooks (automatic)
+        logger.info("Configuring Teamwork webhooks...")
+        teamwork_manager = TeamworkWebhookManager()
+        teamwork_success = teamwork_manager.setup_webhooks(teamwork_webhook_url)
+        
+        if not teamwork_success:
+            teamwork_manager.print_manual_setup_instructions(teamwork_webhook_url)
+        
+        # Configure Missive webhook (automatic - deletes old, creates new)
+        logger.info("Configuring Missive webhook...")
+        missive_manager = MissiveWebhookManager()
+        missive_manager.setup_webhook(missive_webhook_url)
     
     def stop_ngrok(self):
         """Stop ngrok tunnel."""
@@ -193,7 +227,7 @@ class StartupManager:
         # Update checkpoint
         if conversations:
             # Find the latest updated_at timestamp
-            latest_time = datetime.utcnow()
+            latest_time = datetime.now(timezone.utc)
             for conv_data in conversations:
                 if conv_data.get("updated_at"):
                     try:
@@ -227,6 +261,11 @@ def main():
     manager = StartupManager()
     
     try:
+        # Ensure Airtable tables exist (if using Airtable)
+        if not manager.ensure_airtable_tables():
+            logger.error("Failed to setup Airtable tables. Check permissions.")
+            logger.info("Ensure your API key has schema.bases:write scope")
+        
         # Start ngrok
         public_url = manager.start_ngrok()
         
@@ -237,6 +276,9 @@ def main():
             print(f"Teamwork: {public_url}/webhook/teamwork")
             print(f"Missive:  {public_url}/webhook/missive")
             print("="*70 + "\n")
+            
+            # Automatically configure webhooks
+            manager.configure_webhooks(public_url)
         
         # Perform backfill
         manager.perform_backfill()

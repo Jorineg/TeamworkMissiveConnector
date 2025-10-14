@@ -1,5 +1,5 @@
 """Teamwork event handler."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 
 from src.db.models import Task
@@ -116,7 +116,7 @@ class TeamworkEventHandler:
             tags=tags,
             assignees=assignees,
             due_at=due_at,
-            updated_at=updated_at or datetime.utcnow(),
+            updated_at=updated_at or datetime.now(timezone.utc),
             deleted=deleted,
             deleted_at=deleted_at,
             source_links={"teamwork_url": data.get("url", "")} if data.get("url") else {}

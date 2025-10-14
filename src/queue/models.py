@@ -1,6 +1,6 @@
 """Queue item models."""
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 import json
 
@@ -34,7 +34,7 @@ class QueueItem:
             event_type=event_type,
             external_id=external_id,
             payload=payload,
-            enqueued_at=datetime.utcnow().isoformat() + "Z",
+            enqueued_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             attempts=0
         )
 

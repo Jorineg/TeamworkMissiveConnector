@@ -84,6 +84,10 @@ Add these fields:
 
 ### On Windows:
 ```bash
+# Option 1: Use the batch script (opens 3 windows automatically)
+scripts\run_local.bat
+
+# Option 2: Manual (run in 3 separate terminals)
 # Terminal 1
 python -m src.startup
 

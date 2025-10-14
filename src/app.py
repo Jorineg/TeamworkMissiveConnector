@@ -1,7 +1,7 @@
 """Flask application for webhook endpoints."""
 import sys
 from flask import Flask, request, jsonify
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src import settings
 from src.logging_conf import logger
@@ -22,7 +22,7 @@ def health():
     """Health check endpoint."""
     return jsonify({
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "queue_size": queue.size()
     })
 
