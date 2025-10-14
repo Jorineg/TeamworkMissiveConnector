@@ -1,0 +1,172 @@
+"""Flask application for webhook endpoints."""
+import sys
+from flask import Flask, request, jsonify
+from datetime import datetime
+
+from src import settings
+from src.logging_conf import logger
+from src.queue.file_queue import FileQueue
+from src.queue.models import QueueItem
+from src.http.security import verify_teamwork_webhook, verify_missive_webhook
+
+
+# Create Flask app
+app = Flask(__name__)
+
+# Create queue instance
+queue = FileQueue()
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    """Health check endpoint."""
+    return jsonify({
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "queue_size": queue.size()
+    })
+
+
+@app.route("/webhook/teamwork", methods=["POST"])
+def teamwork_webhook():
+    """Handle Teamwork webhook events."""
+    try:
+        # Get raw payload for signature verification
+        payload = request.get_data()
+        signature = request.headers.get("X-Teamwork-Signature") or request.headers.get("X-Hook-Signature")
+        
+        # Verify signature if configured
+        if not verify_teamwork_webhook(payload, signature):
+            logger.warning("Invalid Teamwork webhook signature")
+            return jsonify({"error": "Invalid signature"}), 401
+        
+        # Parse JSON
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON payload"}), 400
+        
+        # Extract event information
+        event_type = data.get("event", data.get("type", "unknown"))
+        
+        # Extract task ID
+        task_id = _extract_teamwork_task_id(data)
+        if not task_id:
+            logger.warning("No task ID found in Teamwork webhook")
+            return jsonify({"error": "No task ID found"}), 400
+        
+        # Create queue item
+        item = QueueItem.create(
+            source="teamwork",
+            event_type=event_type,
+            external_id=task_id,
+            payload=data
+        )
+        
+        # Enqueue
+        queue.enqueue(item)
+        
+        logger.info(
+            f"Received Teamwork webhook: {event_type}",
+            extra={"source": "teamwork", "event_id": task_id}
+        )
+        
+        return jsonify({"status": "accepted"}), 200
+    
+    except Exception as e:
+        logger.error(f"Error handling Teamwork webhook: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route("/webhook/missive", methods=["POST"])
+def missive_webhook():
+    """Handle Missive webhook events."""
+    try:
+        # Get raw payload for signature verification
+        payload = request.get_data()
+        signature = request.headers.get("X-Missive-Signature") or request.headers.get("X-Hook-Signature")
+        
+        # Verify signature if configured
+        if not verify_missive_webhook(payload, signature):
+            logger.warning("Invalid Missive webhook signature")
+            return jsonify({"error": "Invalid signature"}), 401
+        
+        # Parse JSON
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No JSON payload"}), 400
+        
+        # Extract event information
+        event_type = data.get("event", data.get("type", "unknown"))
+        
+        # Extract conversation/message ID
+        external_id = _extract_missive_id(data)
+        if not external_id:
+            logger.warning("No ID found in Missive webhook")
+            return jsonify({"error": "No ID found"}), 400
+        
+        # Create queue item
+        item = QueueItem.create(
+            source="missive",
+            event_type=event_type,
+            external_id=external_id,
+            payload=data
+        )
+        
+        # Enqueue
+        queue.enqueue(item)
+        
+        logger.info(
+            f"Received Missive webhook: {event_type}",
+            extra={"source": "missive", "event_id": external_id}
+        )
+        
+        return jsonify({"status": "accepted"}), 200
+    
+    except Exception as e:
+        logger.error(f"Error handling Missive webhook: {e}", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
+
+
+def _extract_teamwork_task_id(data: dict) -> str:
+    """Extract task ID from Teamwork webhook payload."""
+    if "task" in data:
+        return str(data["task"].get("id", ""))
+    if "taskId" in data:
+        return str(data["taskId"])
+    if "task_id" in data:
+        return str(data["task_id"])
+    if "id" in data:
+        return str(data["id"])
+    return ""
+
+
+def _extract_missive_id(data: dict) -> str:
+    """Extract ID from Missive webhook payload."""
+    if "conversation" in data:
+        return str(data["conversation"].get("id", ""))
+    if "message" in data:
+        return str(data["message"].get("id", ""))
+    if "conversation_id" in data:
+        return str(data["conversation_id"])
+    if "conversationId" in data:
+        return str(data["conversationId"])
+    if "id" in data:
+        return str(data["id"])
+    return ""
+
+
+def main():
+    """Entry point for Flask app."""
+    try:
+        settings.validate_config()
+    except ValueError as e:
+        logger.error(f"Configuration error: {e}")
+        sys.exit(1)
+    
+    logger.info(f"Starting Flask app on port {settings.APP_PORT}")
+    app.run(host="0.0.0.0", port=settings.APP_PORT, debug=False)
+
+
+if __name__ == "__main__":
+    main()
+

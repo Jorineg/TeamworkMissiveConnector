@@ -1,0 +1,9 @@
+flask
+requests
+pyngrok
+pyairtable
+psycopg2-binary
+python-dotenv
+portalocker
+gunicorn
+
