@@ -3,7 +3,6 @@ import json
 import os
 from pathlib import Path
 from typing import Optional
-import portalocker
 
 from src import settings
 from src.queue.models import QueueItem
@@ -11,7 +10,7 @@ from src.logging_conf import logger
 
 
 class FileQueue:
-    """A simple, persistent queue using JSONL files with file locking."""
+    """A simple, persistent queue using JSONL files."""
     
     def __init__(
         self,
@@ -33,7 +32,7 @@ class FileQueue:
     def enqueue(self, item: QueueItem) -> None:
         """Add an item to the queue."""
         try:
-            with portalocker.Lock(self.inbox_file, "a", timeout=5) as f:
+            with open(self.inbox_file, "a") as f:
                 f.write(item.to_json() + "\n")
                 f.flush()
                 os.fsync(f.fileno())
@@ -61,7 +60,7 @@ class FileQueue:
                 self.inbox_file.touch()
             
             # Open in create-if-missing mode to avoid FileNotFoundError
-            with portalocker.Lock(self.inbox_file, "a+", timeout=5) as f:
+            with open(self.inbox_file, "a+") as f:
                 f.seek(offset)
                 line = f.readline()
                 
@@ -100,7 +99,7 @@ class FileQueue:
         if item.attempts >= settings.MAX_QUEUE_ATTEMPTS:
             # Move to DLQ
             try:
-                with portalocker.Lock(self.dlq_file, "a", timeout=5) as f:
+                with open(self.dlq_file, "a") as f:
                     f.write(item.to_json() + "\n")
                     f.flush()
                     os.fsync(f.fileno())
@@ -135,7 +134,7 @@ class FileQueue:
     
     def _save_offset(self, offset: int) -> None:
         """Save the current read offset."""
-        with portalocker.Lock(self.offset_file, "w", timeout=5) as f:
+        with open(self.offset_file, "w") as f:
             json.dump({"offset": offset}, f)
             f.flush()
             os.fsync(f.fileno())
@@ -180,7 +179,7 @@ class FileQueue:
                 
                 # Write to new file
                 temp_file = self.inbox_file.with_suffix(".tmp")
-                with portalocker.Lock(temp_file, "w", timeout=10) as f:
+                with open(temp_file, "w") as f:
                     for line in remaining_items:
                         f.write(line)
                     f.flush()
