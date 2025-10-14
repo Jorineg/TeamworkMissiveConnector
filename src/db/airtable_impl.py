@@ -95,9 +95,11 @@ class AirtableDatabase(DatabaseInterface):
             if task.project_id:
                 fields["Project ID"] = task.project_id
             if task.status:
-                fields["Status"] = task.status
+                # Avoid select option writes; use text field
+                fields["Status Text"] = task.status
             if task.tags:
-                fields["Tags"] = task.tags
+                # Store tags as comma-separated text to avoid select options
+                fields["Tags Text"] = ", ".join(task.tags)
             if task.assignees:
                 fields["Assignees"] = ", ".join(task.assignees)
             if task.due_at:

@@ -84,6 +84,11 @@ class AirtableSetup:
                 self._create_tasks_table()
             else:
                 logger.info(f"✓ Table '{settings.AIRTABLE_TASKS_TABLE}' exists")
+                # Ensure additional fields exist (text-based for data-dependent fields)
+                try:
+                    self._ensure_tasks_extra_fields()
+                except Exception as e:
+                    logger.error(f"Failed ensuring extra fields on Tasks: {e}")
             
             logger.info("✓ Airtable setup complete")
             return True
@@ -103,6 +108,7 @@ class AirtableSetup:
         """Create the Emails table with all necessary fields."""
         url = f"https://api.airtable.com/v0/meta/bases/{self.base_id}/tables"
         
+        # Create a single table via schema API
         data = {
             "name": settings.AIRTABLE_EMAILS_TABLE,
             "description": "Email messages from Missive",
@@ -116,18 +122,23 @@ class AirtableSetup:
                 {"name": "Bcc", "type": "multilineText"},
                 {"name": "Body Text", "type": "multilineText"},
                 {"name": "Body HTML", "type": "multilineText"},
-                {"name": "Sent At", "type": "dateTime", "options": {"dateFormat": {"name": "iso"}}},
-                {"name": "Received At", "type": "dateTime", "options": {"dateFormat": {"name": "iso"}}},
+                {"name": "Sent At", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+                {"name": "Received At", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
                 {"name": "Labels", "type": "multipleSelects", "options": {"choices": []}},
-                {"name": "Deleted", "type": "checkbox"},
-                {"name": "Deleted At", "type": "dateTime", "options": {"dateFormat": {"name": "iso"}}},
+                {"name": "Deleted", "type": "checkbox", "options": {"color": "greenBright", "icon": "check"}},
+                {"name": "Deleted At", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
                 {"name": "Source Links", "type": "multilineText"},
                 {"name": "Attachments", "type": "multipleAttachments"}
             ]
         }
         
         response = requests.post(url, headers=self.headers, json=data, timeout=30)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as http_err:
+            # Include response text for easier troubleshooting
+            logger.error(f"Error creating table '{settings.AIRTABLE_EMAILS_TABLE}': {response.status_code} - {response.text}")
+            raise
         logger.info(f"✓ Created table '{settings.AIRTABLE_EMAILS_TABLE}'")
         return response.json()
     
@@ -135,6 +146,7 @@ class AirtableSetup:
         """Create the Tasks table with all necessary fields."""
         url = f"https://api.airtable.com/v0/meta/bases/{self.base_id}/tables"
         
+        # Create a single table via schema API
         data = {
             "name": settings.AIRTABLE_TASKS_TABLE,
             "description": "Tasks from Teamwork",
@@ -146,18 +158,70 @@ class AirtableSetup:
                 {"name": "Status", "type": "singleSelect", "options": {"choices": [{"name": "new"}]}},
                 {"name": "Tags", "type": "multipleSelects", "options": {"choices": []}},
                 {"name": "Assignees", "type": "multilineText"},
-                {"name": "Due At", "type": "dateTime", "options": {"dateFormat": {"name": "iso"}}},
-                {"name": "Updated At", "type": "dateTime", "options": {"dateFormat": {"name": "iso"}}},
-                {"name": "Deleted", "type": "checkbox"},
-                {"name": "Deleted At", "type": "dateTime", "options": {"dateFormat": {"name": "iso"}}},
+                {"name": "Due At", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+                {"name": "Updated At", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+                {"name": "Deleted", "type": "checkbox", "options": {"color": "greenBright", "icon": "check"}},
+                {"name": "Deleted At", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
                 {"name": "Source Links", "type": "multilineText"}
             ]
         }
         
         response = requests.post(url, headers=self.headers, json=data, timeout=30)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError:
+            logger.error(f"Error creating table '{settings.AIRTABLE_TASKS_TABLE}': {response.status_code} - {response.text}")
+            raise
         logger.info(f"✓ Created table '{settings.AIRTABLE_TASKS_TABLE}'")
         return response.json()
+
+    def _ensure_tasks_extra_fields(self) -> None:
+        """Ensure text-based fields and requested additional fields exist on Tasks table."""
+        # Fetch tables and locate Tasks table ID and fields
+        tables = self._get_existing_tables()
+        tasks_table = next((t for t in tables if t.get("name") == settings.AIRTABLE_TASKS_TABLE), None)
+        if not tasks_table:
+            return
+        table_id = tasks_table.get("id")
+        existing_field_names = {f.get("name") for f in tasks_table.get("fields", [])}
+
+        # Desired extra fields (avoid select option writes)
+        desired_fields = [
+            {"name": "Status Text", "type": "singleLineText"},
+            {"name": "Tags Text", "type": "multilineText"},
+            # User-requested additional fields (text where ambiguous)
+            {"name": "id", "type": "singleLineText"},
+            {"name": "name", "type": "singleLineText"},
+            {"name": "description", "type": "multilineText"},
+            {"name": "priority", "type": "singleLineText"},
+            {"name": "progress", "type": "number", "options": {"precision": 0}},
+            {"name": "tagIds", "type": "multilineText"},
+            {"name": "updatedAt", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+            {"name": "updatedby", "type": "singleLineText"},
+            {"name": "parentTask", "type": "singleLineText"},
+            {"name": "status", "type": "singleLineText"},
+            {"name": "tasklistid", "type": "singleLineText"},
+            {"name": "startdate", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+            {"name": "dueDate", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+            {"name": "estimateMinutes", "type": "number", "options": {"precision": 0}},
+            {"name": "accumulatedEstimatedMinutes", "type": "number", "options": {"precision": 0}},
+            {"name": "assigneeuserids", "type": "multilineText"},
+            {"name": "attachments", "type": "multilineText"},
+            {"name": "createdby", "type": "singleLineText"},
+            {"name": "createdat", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+            {"name": "dateUpdated", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+            {"name": "createdByUserId", "type": "singleLineText"},
+        ]
+
+        create_url = f"https://api.airtable.com/v0/meta/bases/{self.base_id}/tables/{table_id}/fields"
+        for field in desired_fields:
+            if field["name"] in existing_field_names:
+                continue
+            resp = requests.post(create_url, headers=self.headers, json=field, timeout=15)
+            if resp.status_code not in (200, 201):
+                logger.error(f"Failed to create field '{field['name']}' on Tasks: {resp.status_code} - {resp.text}")
+            else:
+                logger.info(f"✓ Added field to Tasks: {field['name']}")
     
 def ensure_airtable_tables() -> bool:
     """

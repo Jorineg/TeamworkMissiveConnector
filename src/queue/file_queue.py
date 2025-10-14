@@ -55,14 +55,25 @@ class FileQueue:
         try:
             offset = self._load_offset()
             
-            with portalocker.Lock(self.inbox_file, "r", timeout=5) as f:
+            # Ensure inbox file exists
+            self.inbox_file.parent.mkdir(parents=True, exist_ok=True)
+            if not self.inbox_file.exists():
+                self.inbox_file.touch()
+            
+            # Open in create-if-missing mode to avoid FileNotFoundError
+            with portalocker.Lock(self.inbox_file, "a+", timeout=5) as f:
                 f.seek(offset)
                 line = f.readline()
                 
                 if not line:
                     return None
+                stripped = line.strip()
+                if not stripped:
+                    # Skip blank lines
+                    self._advance_offset()
+                    return self.dequeue()
                 
-                item = QueueItem.from_json(line.strip())
+                item = QueueItem.from_json(stripped)
                 return item
         except json.JSONDecodeError as e:
             logger.error(f"Corrupt queue item at offset {offset}: {e}")
