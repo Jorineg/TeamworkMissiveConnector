@@ -227,9 +227,10 @@ class StartupManager:
             since = checkpoint.last_event_time - timedelta(seconds=settings.BACKFILL_OVERLAP_SECONDS)
             logger.info(f"Fetching Missive conversations updated since {since.isoformat()}")
         else:
-            # First run, fetch conversations from last 24 hours
-            since = datetime.now(timezone.utc) - timedelta(hours=24)
-            logger.info(f"First run: fetching Missive conversations from last 24 hours")
+            # First run, fetch conversations from configurable backfill period (default 30 days)
+            backfill_days = settings.MISSIVE_BACKFILL_DAYS
+            since = datetime.now(timezone.utc) - timedelta(days=backfill_days)
+            logger.info(f"First run: fetching Missive conversations from last {backfill_days} days")
         
         # Fetch conversations - this will raise exception if API call fails
         conversations = self.missive_client.get_conversations_updated_since(since)

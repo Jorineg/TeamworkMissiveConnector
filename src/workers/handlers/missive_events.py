@@ -1,6 +1,8 @@
 """Missive event handler."""
 from datetime import datetime, timezone
 from typing import Dict, Any, List
+import re
+from html import unescape
 
 from src.db.models import Email, Attachment
 from src.db.interface import DatabaseInterface
@@ -46,6 +48,14 @@ class MissiveEventHandler:
         # Process each message
         for message_data in messages:
             try:
+                # Fetch full message details to get complete body (not just preview)
+                message_id = str(message_data.get("id", ""))
+                if message_id:
+                    full_message = self.client.get_message(message_id)
+                    if full_message:
+                        # Use full message data which includes complete body
+                        message_data = full_message
+                
                 email = self._parse_message(message_data, conversation_id)
                 self.db.upsert_email(email)
             except Exception as e:
@@ -69,17 +79,30 @@ class MissiveEventHandler:
         
         # Parse dates
         sent_at = None
+        received_at = None
+        
+        # Try to parse delivered_at (Unix timestamp)
         if data.get("delivered_at"):
             try:
-                sent_at = datetime.fromisoformat(data["delivered_at"].replace("Z", "+00:00"))
-            except (ValueError, AttributeError):
+                # delivered_at is a Unix timestamp
+                if isinstance(data["delivered_at"], int):
+                    sent_at = datetime.fromtimestamp(data["delivered_at"], tz=timezone.utc)
+                    received_at = sent_at
+                else:
+                    # Sometimes it might be ISO format
+                    sent_at = datetime.fromisoformat(str(data["delivered_at"]).replace("Z", "+00:00"))
+                    received_at = sent_at
+            except (ValueError, AttributeError, OSError):
                 pass
         
-        received_at = None
-        if data.get("received_at"):
+        # Fallback to created_at if delivered_at is not available
+        if not received_at and data.get("created_at"):
             try:
-                received_at = datetime.fromisoformat(data["received_at"].replace("Z", "+00:00"))
-            except (ValueError, AttributeError):
+                if isinstance(data["created_at"], int):
+                    received_at = datetime.fromtimestamp(data["created_at"], tz=timezone.utc)
+                else:
+                    received_at = datetime.fromisoformat(str(data["created_at"]).replace("Z", "+00:00"))
+            except (ValueError, AttributeError, OSError):
                 pass
         
         # Parse from address
@@ -97,8 +120,18 @@ class MissiveEventHandler:
         bcc_addresses = self._parse_email_addresses(data.get("bcc_fields", data.get("bcc", [])))
         
         # Parse body
-        body_text = data.get("body", data.get("preview", ""))
-        body_html = data.get("body_html", "")
+        # Missive API returns HTML in the "body" field, not in "body_html"
+        body_html = data.get("body", "")
+        
+        # Convert HTML to plain text for body_text
+        body_text = ""
+        if body_html:
+            body_text = self._html_to_text(body_html)
+        
+        # Fallback to preview if body is empty
+        if not body_html and data.get("preview"):
+            body_text = data.get("preview", "")
+            body_html = ""
         
         # Parse labels/tags
         labels = []
@@ -129,7 +162,7 @@ class MissiveEventHandler:
             body_text=body_text,
             body_html=body_html,
             sent_at=sent_at,
-            received_at=received_at or sent_at or datetime.now(timezone.utc),
+            received_at=received_at or sent_at,
             labels=labels,
             deleted=deleted,
             deleted_at=deleted_at,
@@ -157,6 +190,37 @@ class MissiveEventHandler:
             return result
         
         return []
+    
+    def _html_to_text(self, html: str) -> str:
+        """Convert HTML to plain text."""
+        if not html:
+            return ""
+        
+        # Remove script and style elements
+        text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Replace common block elements with newlines
+        text = re.sub(r'</(div|p|br|tr|h[1-6]|li)>', '\n', text, flags=re.IGNORECASE)
+        text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+        
+        # Remove all remaining HTML tags
+        text = re.sub(r'<[^>]+>', '', text)
+        
+        # Decode HTML entities
+        text = unescape(text)
+        
+        # Clean up whitespace
+        # Replace multiple spaces with single space
+        text = re.sub(r' +', ' ', text)
+        # Replace multiple newlines with double newline
+        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+        # Remove leading/trailing whitespace from each line
+        text = '\n'.join(line.strip() for line in text.split('\n'))
+        # Remove leading/trailing whitespace from entire text
+        text = text.strip()
+        
+        return text
     
     def _parse_attachments(self, attachments_data: List[Dict[str, Any]]) -> List[Attachment]:
         """Parse attachment data."""

@@ -24,6 +24,10 @@ class MissiveClient:
         """
         Get all conversations (emails) updated since a given datetime.
         
+        Note: Missive API doesn't support filtering by updated_after directly.
+        This method fetches conversations using the 'all' mailbox and filters
+        them client-side based on last_activity_at.
+        
         Args:
             since: Datetime to fetch conversations from
         
@@ -31,33 +35,48 @@ class MissiveClient:
             List of conversation dictionaries
         """
         conversations = []
-        cursor = None
-        
-        # Convert to Unix timestamp
-        updated_after = int(since.timestamp())
+        since_timestamp = int(since.timestamp())
+        until = None
         
         while True:
             try:
+                # Use 'all' mailbox to get all conversations
                 params = {
-                    "updated_after": updated_after,
+                    "all": "true",
                     "limit": 50
                 }
                 
-                if cursor:
-                    params["cursor"] = cursor
+                # Add pagination parameter if we have it
+                if until:
+                    params["until"] = until
                 
                 response = self._request("GET", "/conversations", params=params)
                 
                 if response and "conversations" in response:
                     batch = response["conversations"]
-                    conversations.extend(batch)
                     
-                    logger.info(f"Fetched {len(batch)} conversations from Missive")
+                    # Filter conversations by last_activity_at
+                    filtered_batch = [
+                        conv for conv in batch 
+                        if conv.get("last_activity_at", 0) >= since_timestamp
+                    ]
                     
-                    # Check for next page
-                    cursor = response.get("next_cursor")
-                    if not cursor:
+                    conversations.extend(filtered_batch)
+                    
+                    logger.info(f"Fetched {len(batch)} conversations ({len(filtered_batch)} match filter) from Missive")
+                    
+                    # If we got fewer than limit conversations, or the oldest conversation
+                    # is older than our since timestamp, we're done
+                    if len(batch) < 50:
                         break
+                    
+                    oldest_activity = min(conv.get("last_activity_at", 0) for conv in batch)
+                    if oldest_activity < since_timestamp:
+                        logger.info(f"Reached conversations older than since timestamp, stopping pagination")
+                        break
+                    
+                    # Use the oldest conversation's last_activity_at for pagination
+                    until = oldest_activity
                 else:
                     break
             
@@ -76,6 +95,26 @@ class MissiveClient:
         except Exception as e:
             logger.error(f"Error fetching messages for conversation {conversation_id}: {e}", exc_info=True)
         return []
+    
+    def get_message(self, message_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get full message details including complete body.
+        
+        Args:
+            message_id: Message ID
+        
+        Returns:
+            Full message dict with body, or None
+        """
+        try:
+            response = self._request("GET", f"/messages/{message_id}")
+            if response and "messages" in response:
+                # API returns messages object with single message
+                return response["messages"]
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching message {message_id}: {e}", exc_info=True)
+            return None
     
     def download_attachment(self, attachment_url: str) -> Optional[bytes]:
         """

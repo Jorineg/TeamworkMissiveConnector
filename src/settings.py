@@ -32,6 +32,7 @@ TEAMWORK_WEBHOOK_SECRET = os.getenv("TEAMWORK_WEBHOOK_SECRET", "")
 # Missive settings
 MISSIVE_API_TOKEN = os.getenv("MISSIVE_API_TOKEN")
 MISSIVE_WEBHOOK_SECRET = os.getenv("MISSIVE_WEBHOOK_SECRET", "")
+MISSIVE_BACKFILL_DAYS = int(os.getenv("MISSIVE_BACKFILL_DAYS", "30"))
 
 # Database settings
 DB_BACKEND = os.getenv("DB_BACKEND", "airtable")
