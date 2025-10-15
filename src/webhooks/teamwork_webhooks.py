@@ -97,9 +97,15 @@ class TeamworkWebhookManager:
             
             if response.status_code in [200, 201]:
                 result = response.json()
-                webhook_id = result.get("webhook", {}).get("id")
-                logger.info(f"✓ Created webhook for event: {event}")
-                return str(webhook_id) if webhook_id else None
+                # Try multiple possible response structures
+                webhook_id = result.get("webhook", {}).get("id") or result.get("id")
+                
+                if webhook_id:
+                    logger.info(f"✓ Created webhook for event: {event} (ID: {webhook_id})")
+                    return str(webhook_id)
+                else:
+                    logger.warning(f"Webhook created but no ID found in response: {result}")
+                    return None
             else:
                 logger.warning(f"Failed to create webhook for {event}: {response.status_code}")
                 logger.debug(f"Response: {response.text}")
