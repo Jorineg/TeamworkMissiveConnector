@@ -54,12 +54,12 @@ def teamwork_webhook():
             logger.warning("No task ID found in Teamwork webhook")
             return jsonify({"error": "No task ID found"}), 400
         
-        # Create queue item
+        # Create queue item with minimal payload (store only IDs)
         item = QueueItem.create(
             source="teamwork",
             event_type=event_type,
             external_id=task_id,
-            payload=data
+            payload={}
         )
         
         # Enqueue
@@ -104,12 +104,12 @@ def missive_webhook():
             logger.warning("No ID found in Missive webhook")
             return jsonify({"error": "No ID found"}), 400
         
-        # Create queue item
+        # Create queue item with minimal payload (store only IDs)
         item = QueueItem.create(
             source="missive",
             event_type=event_type,
             external_id=external_id,
-            payload=data
+            payload={}
         )
         
         # Enqueue
@@ -141,17 +141,22 @@ def _extract_teamwork_task_id(data: dict) -> str:
 
 
 def _extract_missive_id(data: dict) -> str:
-    """Extract ID from Missive webhook payload."""
-    if "conversation" in data:
-        return str(data["conversation"].get("id", ""))
-    if "message" in data:
-        return str(data["message"].get("id", ""))
-    if "conversation_id" in data:
-        return str(data["conversation_id"])
-    if "conversationId" in data:
-        return str(data["conversationId"])
-    if "id" in data:
-        return str(data["id"])
+    """Extract conversation ID from Missive webhook payload (prefer conversation-level ID)."""
+    # Prefer explicit conversation object
+    if "conversation" in data and isinstance(data["conversation"], dict):
+        cid = data["conversation"].get("id")
+        if cid:
+            return str(cid)
+    # Look for top-level conversation id fields
+    for key in ("conversation_id", "conversationId"):
+        if key in data and data.get(key):
+            return str(data[key])
+    # Try to derive from message payload if present
+    if "message" in data and isinstance(data["message"], dict):
+        for key in ("conversation_id", "conversationId"):
+            if key in data["message"] and data["message"].get(key):
+                return str(data["message"][key])
+    # Fallback: no conversation id found
     return ""
 
 

@@ -88,10 +88,16 @@ class WorkerDispatcher:
         Args:
             item: Queue item to process
         """
+        # Enrich payload with external ID so handlers can operate with ID-only queue items
+        payload = dict(item.payload or {})
         if item.source == "teamwork":
-            self.teamwork_handler.handle_event(item.event_type, item.payload)
+            payload.setdefault("id", item.external_id)
+            self.teamwork_handler.handle_event(item.event_type, payload)
         elif item.source == "missive":
-            self.missive_handler.handle_event(item.event_type, item.payload)
+            # For Missive, prefer conversation ID
+            payload.setdefault("conversation_id", item.external_id)
+            payload.setdefault("id", item.external_id)
+            self.missive_handler.handle_event(item.event_type, payload)
         else:
             logger.warning(f"Unknown source: {item.source}")
 

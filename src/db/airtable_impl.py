@@ -188,10 +188,13 @@ class AirtableDatabase(DatabaseInterface):
         if email_id in self._email_cache:
             return self._email_cache[email_id]
         
+        # Escape single quotes in formula values
+        safe_email_id = str(email_id).replace("'", "\\'")
+        
         # Search Airtable
         try:
-            formula = f"{{Email ID}} = '{email_id}'"
-            records = self.emails_table.all(formula=formula)
+            formula = f"{{Email ID}} = '{safe_email_id}'"
+            records = self.emails_table.all(formula=formula, max_records=1)
             if records:
                 record_id = records[0]["id"]
                 self._email_cache[email_id] = record_id
@@ -207,10 +210,13 @@ class AirtableDatabase(DatabaseInterface):
         if task_id in self._task_cache:
             return self._task_cache[task_id]
         
+        # Escape single quotes in formula values
+        safe_task_id = str(task_id).replace("'", "\\'")
+        
         # Search Airtable
         try:
-            formula = f"{{Task ID}} = '{task_id}'"
-            records = self.tasks_table.all(formula=formula)
+            formula = f"{{Task ID}} = '{safe_task_id}'"
+            records = self.tasks_table.all(formula=formula, max_records=1)
             if records:
                 record_id = records[0]["id"]
                 self._task_cache[task_id] = record_id

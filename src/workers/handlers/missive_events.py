@@ -31,20 +31,17 @@ class MissiveEventHandler:
             logger.warning(f"No conversation ID found in payload for event {event_type}")
             return
         
-        # Handle deletion/trash events
+        # Handle deletion/trash events: fetch messages first, then mark deleted
         if "deleted" in event_type.lower() or "trashed" in event_type.lower():
-            # Mark all messages in conversation as deleted
-            messages = payload.get("messages", [])
+            messages = self.client.get_conversation_messages(conversation_id)
             for msg in messages:
                 msg_id = str(msg.get("id", ""))
                 if msg_id:
                     self.db.mark_email_deleted(msg_id)
             return
         
-        # Fetch full conversation data if not in payload
-        messages = payload.get("messages", [])
-        if not messages:
-            messages = self.client.get_conversation_messages(conversation_id)
+        # Always fetch fresh messages from API to ensure consistency
+        messages = self.client.get_conversation_messages(conversation_id)
         
         # Process each message
         for message_data in messages:
