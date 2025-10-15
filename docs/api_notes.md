@@ -14,7 +14,7 @@ This document contains notes about the Teamwork and Missive APIs based on implem
 #### Get Tasks
 - **Endpoint**: `GET /projects/api/v3/tasks.json`
 - **Parameters**:
-  - `updatedAfterDate`: Format `YYYYMMDDHHMMSS`
+  - `updatedAfter`: ISO 8601 UTC with seconds, e.g. `2025-10-15T22:12:53Z`
   - `includeCompletedTasks`: `true` to include completed/deleted
   - `includeArchivedProjects`: `true` to include tasks from archived projects
   - `page`: Page number (starts at 1)
@@ -48,9 +48,9 @@ This document contains notes about the Teamwork and Missive APIs based on implem
 
 ### Quirks & Notes
 
-1. **Date Format Inconsistency**:
-   - Query params use `YYYYMMDDHHMMSS`
-   - Response fields use ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`)
+1. **Date Format**:
+   - Query param `updatedAfter` accepts ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`)
+   - Responses also use ISO 8601
 
 2. **Completed vs Deleted**:
    - Completed tasks are still accessible but have `completed: true`

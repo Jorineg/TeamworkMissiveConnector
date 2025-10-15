@@ -144,7 +144,7 @@ class StartupManager:
             since = datetime.now(timezone.utc) - timedelta(hours=24)
             logger.info(f"First run: fetching Teamwork tasks from last 24 hours")
         
-        # Fetch tasks
+        # Fetch tasks - this will raise exception if API call fails
         tasks = self.teamwork_client.get_tasks_updated_since(since, include_deleted=True)
         logger.info(f"Found {len(tasks)} Teamwork tasks to backfill")
         
@@ -166,10 +166,12 @@ class StartupManager:
             except Exception as e:
                 logger.error(f"Error enqueueing Teamwork task: {e}", exc_info=True)
         
-        # Update checkpoint
+        # Update checkpoint to current time (since API call succeeded)
+        # This happens even if 0 tasks were found, to advance the checkpoint
+        latest_time = datetime.now(timezone.utc)
+        
+        # If we found tasks, try to use the latest task timestamp
         if tasks:
-            # Find the latest updated_at timestamp
-            latest_time = datetime.now(timezone.utc)
             for task_data in tasks:
                 if task_data.get("updatedAt"):
                     try:
@@ -178,13 +180,13 @@ class StartupManager:
                             latest_time = task_time
                     except (ValueError, AttributeError):
                         pass
-            
-            checkpoint = Checkpoint(
-                source="teamwork",
-                last_event_time=latest_time
-            )
-            self.db.set_checkpoint(checkpoint)
-            logger.info(f"Updated Teamwork checkpoint to {latest_time.isoformat()}")
+        
+        checkpoint = Checkpoint(
+            source="teamwork",
+            last_event_time=latest_time
+        )
+        self.db.set_checkpoint(checkpoint)
+        logger.info(f"Updated Teamwork checkpoint to {latest_time.isoformat()}")
     
     def _backfill_missive(self):
         """Backfill Missive conversations."""
@@ -202,7 +204,7 @@ class StartupManager:
             since = datetime.now(timezone.utc) - timedelta(hours=24)
             logger.info(f"First run: fetching Missive conversations from last 24 hours")
         
-        # Fetch conversations
+        # Fetch conversations - this will raise exception if API call fails
         conversations = self.missive_client.get_conversations_updated_since(since)
         logger.info(f"Found {len(conversations)} Missive conversations to backfill")
         
@@ -224,10 +226,12 @@ class StartupManager:
             except Exception as e:
                 logger.error(f"Error enqueueing Missive conversation: {e}", exc_info=True)
         
-        # Update checkpoint
+        # Update checkpoint to current time (since API call succeeded)
+        # This happens even if 0 conversations were found, to advance the checkpoint
+        latest_time = datetime.now(timezone.utc)
+        
+        # If we found conversations, try to use the latest conversation timestamp
         if conversations:
-            # Find the latest updated_at timestamp
-            latest_time = datetime.now(timezone.utc)
             for conv_data in conversations:
                 if conv_data.get("updated_at"):
                     try:
@@ -236,13 +240,13 @@ class StartupManager:
                             latest_time = conv_time
                     except (ValueError, AttributeError):
                         pass
-            
-            checkpoint = Checkpoint(
-                source="missive",
-                last_event_time=latest_time
-            )
-            self.db.set_checkpoint(checkpoint)
-            logger.info(f"Updated Missive checkpoint to {latest_time.isoformat()}")
+        
+        checkpoint = Checkpoint(
+            source="missive",
+            last_event_time=latest_time
+        )
+        self.db.set_checkpoint(checkpoint)
+        logger.info(f"Updated Missive checkpoint to {latest_time.isoformat()}")
     
     def cleanup(self):
         """Cleanup resources."""

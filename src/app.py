@@ -1,5 +1,6 @@
 """Flask application for webhook endpoints."""
 import sys
+import threading
 from flask import Flask, request, jsonify
 from datetime import datetime, timezone
 
@@ -15,6 +16,10 @@ app = Flask(__name__)
 
 # Create queue instance (spool-based)
 queue = SpoolQueue()
+
+# Periodic backfill timer
+_backfill_timer = None
+_backfill_stop_event = threading.Event()
 
 
 @app.route("/health", methods=["GET"])
@@ -144,6 +149,50 @@ def _extract_missive_id(data: dict) -> str:
     return ""
 
 
+def _periodic_backfill():
+    """Run backfill periodically to catch events missed by webhooks."""
+    if _backfill_stop_event.is_set():
+        return
+    
+    try:
+        # Import here to avoid circular dependencies
+        from src.startup import StartupManager
+        
+        logger.info("Running periodic backfill...")
+        manager = StartupManager()
+        manager.perform_backfill()
+        manager.cleanup()
+        logger.info("Periodic backfill completed")
+    
+    except Exception as e:
+        logger.error(f"Error during periodic backfill: {e}", exc_info=True)
+    
+    # Schedule next run (60 seconds)
+    if not _backfill_stop_event.is_set():
+        global _backfill_timer
+        _backfill_timer = threading.Timer(60.0, _periodic_backfill)
+        _backfill_timer.daemon = True
+        _backfill_timer.start()
+
+
+def start_periodic_backfill():
+    """Start the periodic backfill timer."""
+    global _backfill_timer
+    logger.info("Starting periodic backfill (every 60 seconds)...")
+    _backfill_timer = threading.Timer(60.0, _periodic_backfill)
+    _backfill_timer.daemon = True
+    _backfill_timer.start()
+
+
+def stop_periodic_backfill():
+    """Stop the periodic backfill timer."""
+    global _backfill_timer
+    logger.info("Stopping periodic backfill...")
+    _backfill_stop_event.set()
+    if _backfill_timer:
+        _backfill_timer.cancel()
+
+
 def main():
     """Entry point for Flask app."""
     try:
@@ -152,8 +201,14 @@ def main():
         logger.error(f"Configuration error: {e}")
         sys.exit(1)
     
-    logger.info(f"Starting Flask app on port {settings.APP_PORT}")
-    app.run(host="0.0.0.0", port=settings.APP_PORT, debug=False)
+    # Start periodic backfill before running the app
+    start_periodic_backfill()
+    
+    try:
+        logger.info(f"Starting Flask app on port {settings.APP_PORT}")
+        app.run(host="0.0.0.0", port=settings.APP_PORT, debug=False)
+    finally:
+        stop_periodic_backfill()
 
 
 if __name__ == "__main__":

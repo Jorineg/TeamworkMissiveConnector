@@ -1,6 +1,6 @@
 """Teamwork API client."""
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 import requests
 from requests.auth import HTTPBasicAuth
@@ -34,15 +34,17 @@ class TeamworkClient:
         page = 1
         page_size = 100
         
-        # Format datetime for Teamwork API (YYYYMMDDHHMMSS)
-        updated_after = since.strftime("%Y%m%d%H%M%S")
+        # Format datetime for Teamwork API: ISO 8601 in UTC, seconds precision
+        # Example: 2025-10-15T22:12:53Z
+        since_utc = since.astimezone(timezone.utc) if since.tzinfo else since.replace(tzinfo=timezone.utc)
+        updated_after = since_utc.isoformat(timespec="seconds").replace("+00:00", "Z")
         
         while True:
             try:
                 params = {
                     "page": page,
                     "pageSize": page_size,
-                    "updatedAfterDate": updated_after,
+                    "updatedAfter": updated_after,  # Correct param name per API docs
                     "includeCompletedTasks": "true" if include_deleted else "false",
                     "includeArchivedProjects": "true" if include_deleted else "false"
                 }
@@ -141,6 +143,16 @@ class TeamworkClient:
                 time.sleep(wait_time)
                 return self._request(method, endpoint, params, json_data, retry_count + 1)
             
+            # Surface error body details on client / 4xx errors
+            if response.status_code >= 400:
+                body_preview: str
+                try:
+                    body_preview = response.text
+                except Exception:
+                    body_preview = "<no body>"
+                logger.error(
+                    f"Teamwork API error {response.status_code} for {url}: {body_preview[:2000]}"
+                )
             response.raise_for_status()
             return response.json()
         
