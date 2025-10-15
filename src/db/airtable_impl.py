@@ -44,13 +44,14 @@ class AirtableDatabase(DatabaseInterface):
             if email.thread_id:
                 fields["Thread ID"] = email.thread_id
             if email.sent_at:
-                fields["Sent At"] = email.sent_at.isoformat()
+                fields["Sent At"] = self._to_utc_z(email.sent_at)
             if email.received_at:
-                fields["Received At"] = email.received_at.isoformat()
+                fields["Received At"] = self._to_utc_z(email.received_at)
             if email.deleted_at:
-                fields["Deleted At"] = email.deleted_at.isoformat()
+                fields["Deleted At"] = self._to_utc_z(email.deleted_at)
             if email.labels:
-                fields["Labels"] = email.labels
+                # Store as plain text to avoid schema option management
+                fields["Labels Text"] = ", ".join(email.labels)
             
             # Handle attachments - Airtable expects list of dicts with 'url' keys
             if email.attachments:
@@ -80,37 +81,69 @@ class AirtableDatabase(DatabaseInterface):
             raise
     
     def upsert_task(self, task: Task) -> None:
-        """Insert or update a task record."""
+        """Insert or update a task record using exact Teamwork API fields."""
         try:
-            # Build Airtable fields
-            fields = {
-                "Task ID": task.task_id,
-                "Title": task.title or "",
-                "Description": task.description or "",
-                "Deleted": task.deleted,
-                "Source Links": json.dumps(task.source_links)
-            }
-            
-            # Add optional fields
-            if task.project_id:
-                fields["Project ID"] = task.project_id
-            if task.status:
-                # Avoid select option writes; use text field
-                fields["Status Text"] = task.status
-            if task.tags:
-                # Store tags as comma-separated text to avoid select options
-                fields["Tags Text"] = ", ".join(task.tags)
-            if task.assignees:
-                fields["Assignees"] = ", ".join(task.assignees)
-            if task.due_at:
-                fields["Due At"] = task.due_at.isoformat()
-            if task.updated_at:
-                fields["Updated At"] = task.updated_at.isoformat()
-            if task.deleted_at:
-                fields["Deleted At"] = task.deleted_at.isoformat()
+            raw = task.raw or {}
+
+            fields: Dict[str, Any] = {}
+
+            def set_if_present(key: str, value: Any) -> None:
+                if value is None:
+                    return
+                fields[key] = value
+
+            def set_dt_if_present(key: str, value: Optional[str]) -> None:
+                if not value:
+                    return
+                try:
+                    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    fields[key] = self._to_utc_z(dt)
+                except Exception:
+                    fields[key] = value
+
+            # Simple scalars
+            set_if_present("id", str(raw.get("id", task.task_id)))
+            set_if_present("name", raw.get("name"))
+            set_if_present("description", raw.get("description"))
+            set_if_present("status", raw.get("status"))
+            set_if_present("priority", raw.get("priority"))
+            if raw.get("progress") is not None:
+                set_if_present("progress", int(raw.get("progress")))
+
+            # Arrays
+            if raw.get("tagIds"):
+                set_if_present("tagIds", ", ".join(str(t) for t in raw.get("tagIds", [])))
+            if raw.get("assigneeUserIds"):
+                set_if_present("assigneeUserIds", ", ".join(str(u) for u in raw.get("assigneeUserIds", [])))
+            if raw.get("attachments") is not None:
+                set_if_present("attachments", json.dumps(raw.get("attachments")))
+
+            # IDs
+            if raw.get("tasklistId") is not None:
+                set_if_present("tasklistId", str(raw.get("tasklistId")))
+            if raw.get("parentTask") is not None:
+                set_if_present("parentTask", str(raw.get("parentTask")))
+
+            # Date/times & numerics
+            set_dt_if_present("startDate", raw.get("startDate"))
+            set_dt_if_present("dueDate", raw.get("dueDate"))
+            set_dt_if_present("updatedAt", raw.get("updatedAt"))
+            if raw.get("updatedBy") is not None:
+                set_if_present("updatedBy", str(raw.get("updatedBy")))
+            set_dt_if_present("createdAt", raw.get("createdAt"))
+            if raw.get("createdBy") is not None:
+                set_if_present("createdBy", str(raw.get("createdBy")))
+            if raw.get("createdByUserId") is not None:
+                set_if_present("createdByUserId", str(raw.get("createdByUserId")))
+            set_dt_if_present("dateUpdated", raw.get("dateUpdated"))
+            if raw.get("estimateMinutes") is not None:
+                set_if_present("estimateMinutes", int(raw.get("estimateMinutes")))
+            if raw.get("accumulatedEstimatedMinutes") is not None:
+                set_if_present("accumulatedEstimatedMinutes", int(raw.get("accumulatedEstimatedMinutes")))
+            set_dt_if_present("deletedAt", raw.get("deletedAt"))
             
             # Check if record exists
-            existing_record_id = self._find_task_record(task.task_id)
+            existing_record_id = self._find_task_record(str(raw.get("id", task.task_id)))
             
             if existing_record_id:
                 # Update existing record
@@ -119,7 +152,7 @@ class AirtableDatabase(DatabaseInterface):
             else:
                 # Create new record
                 record = self.tasks_table.create(fields)
-                self._task_cache[task.task_id] = record["id"]
+                self._task_cache[str(raw.get("id", task.task_id))] = record["id"]
                 logger.info(f"Created task {task.task_id} in Airtable")
         
         except Exception as e:
@@ -146,8 +179,7 @@ class AirtableDatabase(DatabaseInterface):
             record_id = self._find_task_record(task_id)
             if record_id:
                 self.tasks_table.update(record_id, {
-                    "Deleted": True,
-                    "Deleted At": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                    "deletedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                 })
                 logger.info(f"Marked task {task_id} as deleted")
         except Exception as e:
@@ -205,7 +237,7 @@ class AirtableDatabase(DatabaseInterface):
         return None
     
     def _find_task_record(self, task_id: str) -> Optional[str]:
-        """Find a task record by external ID."""
+        """Find a task record by Teamwork id field."""
         # Check cache first
         if task_id in self._task_cache:
             return self._task_cache[task_id]
@@ -215,7 +247,7 @@ class AirtableDatabase(DatabaseInterface):
         
         # Search Airtable
         try:
-            formula = f"{{Task ID}} = '{safe_task_id}'"
+            formula = f"{{id}} = '{safe_task_id}'"
             records = self.tasks_table.all(formula=formula, max_records=1)
             if records:
                 record_id = records[0]["id"]
@@ -225,4 +257,12 @@ class AirtableDatabase(DatabaseInterface):
             logger.error(f"Error finding task record {task_id}: {e}")
         
         return None
+
+    def _to_utc_z(self, dt: datetime) -> str:
+        """Format datetime as UTC ISO string with 'Z' suffix."""
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt.isoformat().replace("+00:00", "Z")
 

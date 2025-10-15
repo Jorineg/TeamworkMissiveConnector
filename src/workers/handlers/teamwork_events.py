@@ -85,15 +85,19 @@ class TeamworkEventHandler:
         tags = []
         if data.get("tags"):
             if isinstance(data["tags"], list):
-                tags = [tag.get("name", str(tag)) if isinstance(tag, dict) else str(tag) 
-                       for tag in data["tags"]]
+                tags = [
+                    tag.get("name")
+                    if isinstance(tag, dict) and tag.get("name")
+                    else (str(tag.get("id")) if isinstance(tag, dict) and tag.get("id") is not None else str(tag))
+                    for tag in data["tags"]
+                ]
         
         # Parse assignees
         assignees = []
         if data.get("assignees"):
             if isinstance(data["assignees"], list):
                 assignees = [
-                    assignee.get("fullName", assignee.get("name", str(assignee)))
+                    (assignee.get("fullName") or assignee.get("name") or str(assignee.get("id")))
                     if isinstance(assignee, dict) else str(assignee)
                     for assignee in data["assignees"]
                 ]
@@ -107,9 +111,28 @@ class TeamworkEventHandler:
             except (ValueError, AttributeError):
                 pass
         
+        # Project ID may not be present; derive via tasklist if available
+        project_id = None
+        if data.get("projectId"):
+            project_id = str(data.get("projectId"))
+        elif data.get("tasklistId"):
+            try:
+                tl = self.client.get_tasklist_by_id(str(data.get("tasklistId")))
+                if tl and tl.get("project") and tl["project"].get("id"):
+                    project_id = str(tl["project"]["id"])
+            except Exception:
+                pass
+
+        # Build a web URL if not provided
+        source_links = {}
+        if data.get("url"):
+            source_links["teamwork_url"] = data.get("url")
+        else:
+            source_links["teamwork_url"] = self.client.build_task_web_url(task_id)
+
         return Task(
             task_id=task_id,
-            project_id=str(data.get("projectId", "")) if data.get("projectId") else None,
+            project_id=project_id,
             title=data.get("name") or data.get("title"),
             description=data.get("description"),
             status=data.get("status") or data.get("state"),
@@ -117,8 +140,9 @@ class TeamworkEventHandler:
             assignees=assignees,
             due_at=due_at,
             updated_at=updated_at or datetime.now(timezone.utc),
-            deleted=deleted,
+            deleted=deleted or bool(data.get("deletedAt")),
             deleted_at=deleted_at,
-            source_links={"teamwork_url": data.get("url", "")} if data.get("url") else {}
+            source_links=source_links,
+            raw=data
         )
 

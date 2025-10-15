@@ -77,6 +77,22 @@ class TeamworkClient:
         except Exception as e:
             logger.error(f"Error fetching task {task_id} from Teamwork: {e}", exc_info=True)
         return None
+
+    def get_tasklist_by_id(self, tasklist_id: str) -> Optional[Dict[str, Any]]:
+        """Get a tasklist by ID (used to derive projectId)."""
+        try:
+            response = self._request("GET", f"/projects/api/v3/tasklists/{tasklist_id}.json")
+            if response and "tasklist" in response:
+                return response["tasklist"]
+        except Exception as e:
+            logger.error(f"Error fetching tasklist {tasklist_id} from Teamwork: {e}", exc_info=True)
+        return None
+
+    def build_task_web_url(self, task_id: str) -> str:
+        """Best-effort construction of a human web URL to the task."""
+        base = settings.TEAMWORK_BASE_URL.rstrip("/")
+        # Teamwork web UI typically routes via /#/tasks/{id}
+        return f"{base}/#/tasks/{task_id}"
     
     def _request(
         self,

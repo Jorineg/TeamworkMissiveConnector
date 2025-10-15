@@ -81,6 +81,7 @@ class Task:
     deleted: bool = False
     deleted_at: Optional[datetime] = None
     source_links: Dict[str, str] = field(default_factory=dict)
+    raw: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         return {

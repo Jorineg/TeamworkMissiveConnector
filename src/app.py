@@ -40,16 +40,13 @@ def teamwork_webhook():
             logger.warning("Invalid Teamwork webhook signature")
             return jsonify({"error": "Invalid signature"}), 401
         
-        # Parse JSON
-        data = request.get_json()
+        # Teamwork sends form data, not JSON
+        data = request.form.to_dict()
         if not data:
-            return jsonify({"error": "No JSON payload"}), 400
+            return jsonify({"error": "No data received"}), 400
         
-        # Extract event information
-        event_type = data.get("event", data.get("type", "unknown"))
-        
-        # Extract task ID
-        task_id = _extract_teamwork_task_id(data)
+        # Extract task ID (different field names for different webhook types)
+        task_id = data.get("Task.ID") or data.get("ID")
         if not task_id:
             logger.warning("No task ID found in Teamwork webhook")
             return jsonify({"error": "No task ID found"}), 400
@@ -57,7 +54,7 @@ def teamwork_webhook():
         # Create queue item with minimal payload (store only IDs)
         item = QueueItem.create(
             source="teamwork",
-            event_type=event_type,
+            event_type="task.updated",  # Teamwork form webhooks don't specify event type
             external_id=task_id,
             payload={}
         )
@@ -66,7 +63,7 @@ def teamwork_webhook():
         queue.enqueue(item)
         
         logger.info(
-            f"Received Teamwork webhook: {event_type}",
+            f"Received Teamwork webhook for task {task_id}",
             extra={"source": "teamwork", "event_id": task_id}
         )
         
@@ -125,19 +122,6 @@ def missive_webhook():
     except Exception as e:
         logger.error(f"Error handling Missive webhook: {e}", exc_info=True)
         return jsonify({"error": "Internal server error"}), 500
-
-
-def _extract_teamwork_task_id(data: dict) -> str:
-    """Extract task ID from Teamwork webhook payload."""
-    if "task" in data:
-        return str(data["task"].get("id", ""))
-    if "taskId" in data:
-        return str(data["taskId"])
-    if "task_id" in data:
-        return str(data["task_id"])
-    if "id" in data:
-        return str(data["id"])
-    return ""
 
 
 def _extract_missive_id(data: dict) -> str:

@@ -1,4 +1,5 @@
 """Teamwork webhook management via API."""
+import json
 import requests
 from typing import List, Dict, Any, Optional
 from requests.auth import HTTPBasicAuth
@@ -9,6 +10,9 @@ from src.logging_conf import logger
 
 class TeamworkWebhookManager:
     """Manage Teamwork webhooks via API."""
+    
+    # Store webhook IDs to delete on next run
+    WEBHOOK_IDS_FILE = settings.DATA_DIR / "teamwork_webhook_ids.json"
     
     def __init__(self):
         self.base_url = settings.TEAMWORK_BASE_URL
@@ -26,7 +30,7 @@ class TeamworkWebhookManager:
     def setup_webhooks(self, webhook_url: str) -> bool:
         """
         Set up webhooks for Teamwork.
-        Creates or updates webhooks to point to the given URL.
+        Deletes old webhooks (if exist) and creates new ones.
         
         Args:
             webhook_url: The URL to send webhooks to (e.g., ngrok URL)
@@ -37,29 +41,29 @@ class TeamworkWebhookManager:
         try:
             logger.info(f"Setting up Teamwork webhooks to: {webhook_url}")
             
-            # Get existing webhooks
-            existing_webhooks = self._get_webhooks()
+            # Delete old webhooks if they exist
+            old_webhook_ids = self._load_webhook_ids()
+            if old_webhook_ids:
+                logger.info(f"Deleting {len(old_webhook_ids)} old Teamwork webhooks")
+                for webhook_id in old_webhook_ids:
+                    self._delete_webhook(webhook_id)
             
-            # Check if we already have webhooks for our URL
-            our_webhooks = [
-                w for w in existing_webhooks
-                if w.get("url") == webhook_url
-            ]
+            # Create new webhooks for each event
+            logger.info(f"Creating new webhooks for {len(self.desired_events)} events")
+            new_webhook_ids = []
+            for event in self.desired_events:
+                webhook_id = self._create_webhook(webhook_url, event)
+                if webhook_id:
+                    new_webhook_ids.append(webhook_id)
             
-            if our_webhooks:
-                logger.info(f"Found {len(our_webhooks)} existing webhooks for this URL")
-                # Update existing webhooks
-                for webhook in our_webhooks:
-                    self._update_webhook(webhook["id"], webhook_url)
-                return True
-            else:
-                # Create new webhooks for each event
-                logger.info(f"Creating new webhooks for {len(self.desired_events)} events")
-                for event in self.desired_events:
-                    self._create_webhook(webhook_url, event)
-                
+            # Save new webhook IDs
+            if new_webhook_ids:
+                self._save_webhook_ids(new_webhook_ids)
                 logger.info("✓ Teamwork webhooks configured successfully")
                 return True
+            else:
+                logger.error("Failed to create any Teamwork webhooks")
+                return False
         
         except Exception as e:
             logger.error(f"Failed to setup Teamwork webhooks: {e}", exc_info=True)
@@ -69,34 +73,8 @@ class TeamworkWebhookManager:
             logger.info(f"  Select events: {', '.join(self.desired_events)}")
             return False
     
-    def _get_webhooks(self) -> List[Dict[str, Any]]:
-        """Get all existing webhooks."""
-        try:
-            # Note: Teamwork v1 API endpoint for webhooks
-            response = requests.get(
-                f"{self.base_url}/projects/api/v1/webhooks.json",
-                auth=self.auth,
-                headers={"Accept": "application/json"},
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("webhooks", [])
-            elif response.status_code == 404:
-                # Webhooks endpoint might not be available in all Teamwork plans
-                logger.warning("Webhooks endpoint not available (404). May need Pro plan or higher.")
-                return []
-            else:
-                logger.warning(f"Failed to get webhooks: {response.status_code}")
-                return []
-        
-        except Exception as e:
-            logger.warning(f"Could not retrieve existing webhooks: {e}")
-            return []
-    
-    def _create_webhook(self, url: str, event: str) -> Optional[Dict[str, Any]]:
-        """Create a new webhook."""
+    def _create_webhook(self, url: str, event: str) -> Optional[str]:
+        """Create a new webhook and return its ID."""
         try:
             data = {
                 "webhook": {
@@ -118,8 +96,10 @@ class TeamworkWebhookManager:
             )
             
             if response.status_code in [200, 201]:
+                result = response.json()
+                webhook_id = result.get("webhook", {}).get("id")
                 logger.info(f"✓ Created webhook for event: {event}")
-                return response.json()
+                return str(webhook_id) if webhook_id else None
             else:
                 logger.warning(f"Failed to create webhook for {event}: {response.status_code}")
                 logger.debug(f"Response: {response.text}")
@@ -129,37 +109,49 @@ class TeamworkWebhookManager:
             logger.warning(f"Could not create webhook for {event}: {e}")
             return None
     
-    def _update_webhook(self, webhook_id: str, url: str) -> bool:
-        """Update an existing webhook."""
+    def _delete_webhook(self, webhook_id: str) -> bool:
+        """Delete a webhook by ID."""
         try:
-            data = {
-                "webhook": {
-                    "url": url,
-                    "active": True
-                }
-            }
-            
-            response = requests.put(
+            response = requests.delete(
                 f"{self.base_url}/projects/api/v1/webhooks/{webhook_id}.json",
                 auth=self.auth,
-                json=data,
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json"
-                },
+                headers={"Accept": "application/json"},
                 timeout=10
             )
             
-            if response.status_code == 200:
-                logger.info(f"✓ Updated webhook {webhook_id}")
+            if response.status_code in [200, 204]:
+                logger.info(f"✓ Deleted old Teamwork webhook {webhook_id}")
+                return True
+            elif response.status_code == 404:
+                logger.info(f"Old webhook {webhook_id} no longer exists (404)")
                 return True
             else:
-                logger.warning(f"Failed to update webhook {webhook_id}: {response.status_code}")
+                logger.warning(f"Failed to delete webhook {webhook_id}: {response.status_code}")
                 return False
         
         except Exception as e:
-            logger.warning(f"Could not update webhook {webhook_id}: {e}")
+            logger.warning(f"Could not delete webhook {webhook_id}: {e}")
             return False
+    
+    def _load_webhook_ids(self) -> List[str]:
+        """Load the stored webhook IDs from file."""
+        try:
+            if self.WEBHOOK_IDS_FILE.exists():
+                with open(self.WEBHOOK_IDS_FILE, "r") as f:
+                    data = json.load(f)
+                    return data.get("webhook_ids", [])
+        except Exception as e:
+            logger.debug(f"Could not load webhook IDs: {e}")
+        return []
+    
+    def _save_webhook_ids(self, webhook_ids: List[str]) -> None:
+        """Save the webhook IDs to file."""
+        try:
+            self.WEBHOOK_IDS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.WEBHOOK_IDS_FILE, "w") as f:
+                json.dump({"webhook_ids": webhook_ids}, f)
+        except Exception as e:
+            logger.warning(f"Could not save webhook IDs: {e}")
     
     def print_manual_setup_instructions(self, webhook_url: str):
         """Print manual setup instructions."""
