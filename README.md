@@ -4,51 +4,16 @@ A reliable Python-based connector system that synchronizes data from Teamwork (t
 
 ## Features
 
-- **Webhook-based real-time sync** for Teamwork tasks and Missive emails
-- **Startup backfill** to catch missed events during downtime
-- **Persistent queue** (spool-based) ensures no events are lost
+- **Fully automated setup** - Tables and webhooks created automatically
+- **Webhook-based real-time sync** for Teamwork tasks and Missive emails  
+- **Periodic backfill** (every 60s) ensures no events are missed
+- **Persistent spool queue** ensures no events are lost
 - **Attachment handling** from Missive emails (uploads to Airtable)
 - **Soft deletion** support with `deleted` flag
+- **ID-to-name mapping** for tags and people (cached locally)
 - **Database abstraction** for easy migration from Airtable to PostgreSQL
-- **Local ngrok support** for webhook testing
 
-## Project Structure
-
-```
-TeamworkMissiveConnector/
-├── src/
-│   ├── app.py                      # Flask webhook endpoints
-│   ├── settings.py                 # Configuration management
-│   ├── logging_conf.py             # Logging setup
-│   ├── startup.py                  # ngrok tunnel & backfill
-│   ├── queue/
-│   │   ├── spool_queue.py          # Spool directory queue implementation
-│   │   └── models.py               # Queue item schemas
-│   ├── workers/
-│   │   ├── dispatcher.py           # Queue processor & retry logic
-│   │   └── handlers/
-│   │       ├── missive_events.py   # Missive event handler
-│   │       └── teamwork_events.py  # Teamwork event handler
-│   ├── connectors/
-│   │   ├── missive_client.py       # Missive API client
-│   │   └── teamwork_client.py      # Teamwork API client
-│   ├── db/
-│   │   ├── interface.py            # Abstract database interface
-│   │   ├── airtable_impl.py        # Airtable implementation
-│   │   ├── postgres_impl.py        # PostgreSQL implementation
-│   │   └── models.py               # Domain models
-│   └── http/
-│       └── security.py             # Webhook verification
-├── scripts/
-│   └── run_local.sh                # Development runner
-├── data/                           # Queue & checkpoints (created at runtime)
-├── logs/                           # Application logs (created at runtime)
-├── .env.example
-├── requirements.txt
-└── README.md
-```
-
-## Setup
+## Quick Start
 
 ### 1. Install Dependencies
 
@@ -62,139 +27,144 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Edit .env with your API keys and settings
+# Edit .env with your API keys
 ```
 
-### 3. Set Up Airtable
+Required settings:
+```env
+# ngrok (for local dev)
+NGROK_AUTHTOKEN=your_token_here
 
-Create two tables in your Airtable base:
+# Teamwork
+TEAMWORK_BASE_URL=https://yourcompany.teamwork.com
+TEAMWORK_API_KEY=your_key_here
 
-**Emails Table:**
-- Email ID (Single line text, Primary)
-- Thread ID (Single line text)
-- Subject (Single line text)
-- From (Single line text)
-- To (Long text)
-- Cc (Long text)
-- Bcc (Long text)
-- Body Text (Long text)
-- Body HTML (Long text)
-- Sent At (Date)
-- Received At (Date)
-- Labels (Multiple select)
-- Deleted (Checkbox)
-- Deleted At (Date)
-- Source Links (Long text)
-- Attachments (Attachment)
+# Missive
+MISSIVE_API_TOKEN=your_token_here
 
-**Tasks Table:**
-- Task ID (Single line text, Primary)
-- Project ID (Single line text)
-- Title (Single line text)
-- Description (Long text)
-- Status (Single select)
-- Tags (Multiple select)
-- Assignees (Long text)
-- Due At (Date)
-- Updated At (Date)
-- Deleted (Checkbox)
-- Deleted At (Date)
-- Source Links (Long text)
+# Airtable
+AIRTABLE_API_KEY=your_key_here
+AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
+```
 
-### 4. Configure Webhooks
-
-#### For Local Development (with ngrok):
+### 3. Run
 
 ```bash
-# Run the application
+# On macOS/Linux
 ./scripts/run_local.sh
+
+# On Windows
+scripts\run_local.bat
 ```
 
-The script will:
-1. Start ngrok tunnel
-2. Print webhook URLs
-3. Start the Flask app and worker
+**That's it!** The system will automatically:
+- ✅ Create Airtable tables (if needed)
+- ✅ Set up ngrok tunnel
+- ✅ Configure Teamwork webhooks
+- ✅ Configure Missive webhooks
+- ✅ Perform initial backfill
+- ✅ Start processing events
 
-Copy the webhook URLs and configure them in:
-- **Teamwork**: Settings > API & Webhooks > Add Webhook
-- **Missive**: Settings > Integrations > Webhooks > Add Webhook
+## Project Structure
 
-#### For Production Deployment:
+```
+TeamworkMissiveConnector/
+├── src/
+│   ├── app.py                      # Flask webhook endpoints + periodic backfill
+│   ├── startup.py                  # Automated setup & ngrok tunnel
+│   ├── connectors/
+│   │   ├── missive_client.py       # Missive API client
+│   │   ├── teamwork_client.py      # Teamwork API client
+│   │   └── teamwork_mappings.py    # ID-to-name mappings
+│   ├── queue/
+│   │   └── spool_queue.py          # Spool directory queue
+│   ├── workers/
+│   │   ├── dispatcher.py           # Queue processor
+│   │   └── handlers/               # Event handlers
+│   ├── db/
+│   │   ├── interface.py            # Abstract database interface
+│   │   ├── airtable_impl.py        # Airtable implementation
+│   │   └── postgres_impl.py        # PostgreSQL implementation
+│   └── webhooks/
+│       ├── teamwork_webhooks.py    # Webhook management
+│       └── missive_webhooks.py
+├── data/                           # Queue, checkpoints, mappings (created at runtime)
+├── logs/                           # Application logs
+└── scripts/                        # Helper scripts
+```
 
-Update the `.env` file with your production domain and skip ngrok setup.
+## Documentation
 
-## Usage
+- **[SETUP.md](SETUP.md)** - Detailed setup guide with all options
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical architecture and design decisions
+- **[docs/api_notes.md](docs/api_notes.md)** - API quirks and field mappings
+- **[issues.md](issues.md)** - Known issues and resolutions
 
-### Run Locally
+## Key Features Explained
+
+### Automated Setup
+On startup, the system automatically:
+- Creates Airtable tables via API (with all required fields)
+- Configures Teamwork webhooks via API (creates/updates as needed)
+- Configures Missive webhooks via API (deletes old, creates new)
+- Stores webhook IDs for cleanup on next run
+
+### Periodic Backfill
+Every 60 seconds, the system:
+- Queries APIs for recently updated items
+- Captures any events that webhooks might have missed
+- Updates cached mappings for tags and people
+
+### ID-to-Name Mapping
+- Fetches all people and tags from Teamwork on startup
+- Caches in `data/teamwork_people.json` and `data/teamwork_tags.json`
+- Replaces IDs with names when storing tasks in Airtable
+- Stores both IDs (for programmatic use) and names (for readability)
+
+### Reliability
+- **Idempotent upserts** - Safe to process same event multiple times
+- **Persistent spool queue** - One file per event, survives crashes
+- **Retry logic** - Exponential backoff, moves to retry queue
+- **Overlap window** - Queries API with time buffer to handle clock skew
+
+## Monitoring
 
 ```bash
-./scripts/run_local.sh
+# Check logs
+tail -f logs/app.log
+
+# Check queue status
+python scripts/check_queue.py
+
+# Manual backfill
+python scripts/manual_backfill.py
+
+# Validate configuration
+python scripts/validate_config.py
 ```
-
-Or manually:
-
-```bash
-# Terminal 1: Run Flask app
-python -m src.app
-
-# Terminal 2: Run worker
-python -m src.workers.dispatcher
-```
-
-### Monitor
-
-Check logs in `logs/app.log` for activity and errors.
 
 ## Database Migration (Airtable → PostgreSQL)
 
-1. Create PostgreSQL tables using the schema in `src/db/postgres_impl.py`
-2. Update `.env`: `DB_BACKEND=postgres`
-3. Set `PG_DSN` with your connection string
-4. Restart the application
-
-## Architecture
-
-### Webhook Flow
-1. Teamwork/Missive sends webhook → Flask endpoint
-2. Endpoint validates & enqueues event → Spool queue (one file per ID)
-3. Worker dequeues → processes → stores in DB
-4. Checkpoint updated
-
-### Startup Backfill
-1. Read last checkpoint (timestamp + ID)
-2. Query API for items changed since checkpoint - overlap
-3. Enqueue all items
-4. Process normally
-
-### Reliability Features
-- **Idempotent upserts** using external IDs
-- **Persistent queue** with fsync
-- **Retry logic** with exponential backoff
-- **Dead letter queue** for poison messages
-- **Overlap window** to handle clock skew
-
-## API Rate Limits
-
-- **Teamwork**: 200 requests/minute (more than sufficient for your volume)
-- **Missive**: Generous limits, well above 30 emails/hour
-- Both connectors implement exponential backoff on rate limit errors
+1. Create PostgreSQL database
+2. Update `.env`: `DB_BACKEND=postgres` and set `PG_DSN`
+3. Restart application (tables created automatically)
 
 ## Troubleshooting
 
 ### Webhooks not arriving
-- Check ngrok tunnel is active: `http://localhost:4040`
-- Verify webhook URLs in Teamwork/Missive settings
-- Check Flask app logs
+- Check ngrok tunnel: `http://localhost:4040`
+- Verify webhook configuration succeeded in startup logs
+- Check Flask app is running on port 5000
 
 ### Queue not processing
 - Check worker is running: `ps aux | grep dispatcher`
 - Check worker logs in `logs/app.log`
-- Inspect spool: `dir data/queue/spool/*`
+- Inspect spool: `ls data/queue/spool/*/`
 
 ### Database errors
 - Verify API keys in `.env`
 - Check Airtable base ID and table names
-- Ensure tables exist with correct field names
+- Ensure tables were created successfully (check startup logs)
 
 ## License
 

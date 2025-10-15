@@ -103,10 +103,8 @@ def main():
     # Check documentation
     print("\n[Documentation]")
     all_ok &= check_file(project_root / "README.md")
-    all_ok &= check_file(project_root / "QUICKSTART.md")
     all_ok &= check_file(project_root / "SETUP.md")
     all_ok &= check_file(project_root / "ARCHITECTURE.md")
-    all_ok &= check_file(project_root / "PROJECT_SUMMARY.md")
     all_ok &= check_directory(project_root / "docs")
     all_ok &= check_file(project_root / "docs" / "api_notes.md")
     
@@ -195,7 +193,7 @@ def main():
         print("  2. Configure your API keys in .env")
         print("  3. Run: python scripts/validate_config.py")
         print("  4. Run: ./scripts/run_local.sh")
-        print("\nSee QUICKSTART.md for detailed instructions.")
+        print("\nSee SETUP.md for detailed instructions.")
         return 0
     else:
         print(f"\n{RED}[FAILED] Installation verification failed!{RESET}")
