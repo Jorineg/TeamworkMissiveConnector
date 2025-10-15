@@ -5,6 +5,7 @@ from typing import Dict, Any
 from src.db.models import Task
 from src.db.interface import DatabaseInterface
 from src.connectors.teamwork_client import TeamworkClient
+from src.connectors.teamwork_mappings import get_mappings
 from src.logging_conf import logger
 
 
@@ -81,26 +82,68 @@ class TeamworkEventHandler:
             except (ValueError, AttributeError):
                 pass
         
-        # Parse tags
+        # Parse tags - replace IDs with string values
+        mappings = get_mappings()
         tags = []
         if data.get("tags"):
             if isinstance(data["tags"], list):
-                tags = [
-                    tag.get("name")
-                    if isinstance(tag, dict) and tag.get("name")
-                    else (str(tag.get("id")) if isinstance(tag, dict) and tag.get("id") is not None else str(tag))
-                    for tag in data["tags"]
-                ]
+                for tag in data["tags"]:
+                    if isinstance(tag, dict):
+                        # Try to get name first, fallback to ID lookup
+                        if tag.get("name"):
+                            tags.append(tag["name"])
+                        elif tag.get("id") is not None:
+                            tag_name = mappings.get_tag_name(tag["id"])
+                            tags.append(tag_name)
+                    else:
+                        # Assume it's an ID
+                        tag_name = mappings.get_tag_name(tag)
+                        tags.append(tag_name)
         
-        # Parse assignees
+        # Parse assignees - replace IDs with string values
         assignees = []
         if data.get("assignees"):
             if isinstance(data["assignees"], list):
-                assignees = [
-                    (assignee.get("fullName") or assignee.get("name") or str(assignee.get("id")))
-                    if isinstance(assignee, dict) else str(assignee)
-                    for assignee in data["assignees"]
-                ]
+                for assignee in data["assignees"]:
+                    if isinstance(assignee, dict):
+                        # Try to get name first, fallback to ID lookup
+                        if assignee.get("fullName") or assignee.get("name"):
+                            assignees.append(assignee.get("fullName") or assignee.get("name"))
+                        elif assignee.get("id") is not None:
+                            person_name = mappings.get_person_name(assignee["id"])
+                            assignees.append(person_name)
+                    else:
+                        # Assume it's an ID
+                        person_name = mappings.get_person_name(assignee)
+                        assignees.append(person_name)
+        
+        # Parse createdBy - replace ID with string value
+        created_by = None
+        if data.get("createdBy"):
+            created_by_data = data["createdBy"]
+            if isinstance(created_by_data, dict):
+                # Try to get name first, fallback to ID lookup
+                if created_by_data.get("fullName") or created_by_data.get("name"):
+                    created_by = created_by_data.get("fullName") or created_by_data.get("name")
+                elif created_by_data.get("id") is not None:
+                    created_by = mappings.get_person_name(created_by_data["id"])
+            else:
+                # Assume it's an ID
+                created_by = mappings.get_person_name(created_by_data)
+        
+        # Parse updatedBy - replace ID with string value
+        updated_by = None
+        if data.get("updatedBy"):
+            updated_by_data = data["updatedBy"]
+            if isinstance(updated_by_data, dict):
+                # Try to get name first, fallback to ID lookup
+                if updated_by_data.get("fullName") or updated_by_data.get("name"):
+                    updated_by = updated_by_data.get("fullName") or updated_by_data.get("name")
+                elif updated_by_data.get("id") is not None:
+                    updated_by = mappings.get_person_name(updated_by_data["id"])
+            else:
+                # Assume it's an ID
+                updated_by = mappings.get_person_name(updated_by_data)
         
         # Check if deleted/completed
         deleted = data.get("deleted", False) or data.get("completed", False)
@@ -138,6 +181,8 @@ class TeamworkEventHandler:
             status=data.get("status") or data.get("state"),
             tags=tags,
             assignees=assignees,
+            created_by=created_by,
+            updated_by=updated_by,
             due_at=due_at,
             updated_at=updated_at or datetime.now(timezone.utc),
             deleted=deleted or bool(data.get("deletedAt")),

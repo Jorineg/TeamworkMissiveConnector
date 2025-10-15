@@ -16,6 +16,7 @@ from src.db.models import Checkpoint
 from src.db.airtable_setup import AirtableSetup
 from src.connectors.teamwork_client import TeamworkClient
 from src.connectors.missive_client import MissiveClient
+from src.connectors.teamwork_mappings import get_mappings
 from src.webhooks.teamwork_webhooks import TeamworkWebhookManager
 from src.webhooks.missive_webhooks import MissiveWebhookManager
 
@@ -110,9 +111,35 @@ class StartupManager:
             except Exception as e:
                 logger.error(f"Error stopping ngrok: {e}")
     
+    def cache_teamwork_mappings(self):
+        """Fetch and cache people and tags from Teamwork."""
+        logger.info("Fetching Teamwork people and tags...")
+        
+        try:
+            # Fetch people
+            people = self.teamwork_client.get_people()
+            
+            # Fetch tags
+            tags = self.teamwork_client.get_tags()
+            
+            # Update mappings cache
+            mappings = get_mappings()
+            mappings.update_people(people)
+            mappings.update_tags(tags)
+            
+            logger.info("Successfully cached Teamwork mappings")
+        except Exception as e:
+            logger.error(f"Error caching Teamwork mappings: {e}", exc_info=True)
+    
     def perform_backfill(self):
         """Perform startup backfill to catch missed events."""
         logger.info("Starting backfill operation...")
+        
+        # Cache Teamwork mappings first
+        try:
+            self.cache_teamwork_mappings()
+        except Exception as e:
+            logger.error(f"Error caching Teamwork mappings: {e}", exc_info=True)
         
         # Backfill Teamwork tasks
         try:

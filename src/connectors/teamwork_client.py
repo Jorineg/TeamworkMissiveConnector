@@ -90,6 +90,38 @@ class TeamworkClient:
             logger.error(f"Error fetching tasklist {tasklist_id} from Teamwork: {e}", exc_info=True)
         return None
 
+    def get_people(self) -> List[Dict[str, Any]]:
+        """
+        Get all people from Teamwork.
+        
+        Returns:
+            List of people dictionaries
+        """
+        try:
+            response = self._request("GET", "/projects/api/v3/people.json")
+            if response and "people" in response:
+                logger.info(f"Fetched {len(response['people'])} people from Teamwork")
+                return response["people"]
+        except Exception as e:
+            logger.error(f"Error fetching people from Teamwork: {e}", exc_info=True)
+        return []
+    
+    def get_tags(self) -> List[Dict[str, Any]]:
+        """
+        Get all tags from Teamwork.
+        
+        Returns:
+            List of tag dictionaries
+        """
+        try:
+            response = self._request("GET", "/projects/api/v3/tags.json")
+            if response and "tags" in response:
+                logger.info(f"Fetched {len(response['tags'])} tags from Teamwork")
+                return response["tags"]
+        except Exception as e:
+            logger.error(f"Error fetching tags from Teamwork: {e}", exc_info=True)
+        return []
+
     def build_task_web_url(self, task_id: str) -> str:
         """Best-effort construction of a human web URL to the task."""
         base = settings.TEAMWORK_BASE_URL.rstrip("/")

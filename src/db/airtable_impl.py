@@ -110,11 +110,18 @@ class AirtableDatabase(DatabaseInterface):
             if raw.get("progress") is not None:
                 set_if_present("progress", int(raw.get("progress")))
 
-            # Arrays
+            # Tags - store both IDs and names
             if raw.get("tagIds"):
                 set_if_present("tagIds", ", ".join(str(t) for t in raw.get("tagIds", [])))
+            if task.tags:
+                set_if_present("tags", ", ".join(task.tags))
+            
+            # Assignees - store both IDs and names
             if raw.get("assigneeUserIds"):
                 set_if_present("assigneeUserIds", ", ".join(str(u) for u in raw.get("assigneeUserIds", [])))
+            if task.assignees:
+                set_if_present("assignees", ", ".join(task.assignees))
+            
             if raw.get("attachments") is not None:
                 set_if_present("attachments", json.dumps(raw.get("attachments")))
 
@@ -128,13 +135,26 @@ class AirtableDatabase(DatabaseInterface):
             set_dt_if_present("startDate", raw.get("startDate"))
             set_dt_if_present("dueDate", raw.get("dueDate"))
             set_dt_if_present("updatedAt", raw.get("updatedAt"))
-            if raw.get("updatedBy") is not None:
-                set_if_present("updatedBy", str(raw.get("updatedBy")))
+            
+            # UpdatedBy - store both ID and name
+            if raw.get("updatedBy"):
+                if isinstance(raw["updatedBy"], dict) and raw["updatedBy"].get("id"):
+                    set_if_present("updatedById", str(raw["updatedBy"]["id"]))
+                elif not isinstance(raw["updatedBy"], dict):
+                    set_if_present("updatedById", str(raw["updatedBy"]))
+            if task.updated_by:
+                set_if_present("updatedBy", task.updated_by)
+            
             set_dt_if_present("createdAt", raw.get("createdAt"))
-            if raw.get("createdBy") is not None:
-                set_if_present("createdBy", str(raw.get("createdBy")))
-            if raw.get("createdByUserId") is not None:
-                set_if_present("createdByUserId", str(raw.get("createdByUserId")))
+            
+            # CreatedBy - store both ID and name
+            if raw.get("createdBy"):
+                if isinstance(raw["createdBy"], dict) and raw["createdBy"].get("id"):
+                    set_if_present("createdById", str(raw["createdBy"]["id"]))
+                elif not isinstance(raw["createdBy"], dict):
+                    set_if_present("createdById", str(raw["createdBy"]))
+            if task.created_by:
+                set_if_present("createdBy", task.created_by)
             set_dt_if_present("dateUpdated", raw.get("dateUpdated"))
             if raw.get("estimateMinutes") is not None:
                 set_if_present("estimateMinutes", int(raw.get("estimateMinutes")))

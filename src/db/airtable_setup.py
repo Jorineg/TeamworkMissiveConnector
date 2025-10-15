@@ -110,18 +110,25 @@ class AirtableSetup:
                 {"name": "status", "type": "singleLineText"},
                 {"name": "priority", "type": "singleLineText"},
                 {"name": "progress", "type": "number", "options": {"precision": 0}},
+                # Tags - both IDs and names
                 {"name": "tagIds", "type": "multilineText"},
+                {"name": "tags", "type": "multilineText"},
+                # Assignees - both IDs and names
                 {"name": "assigneeUserIds", "type": "multilineText"},
+                {"name": "assignees", "type": "multilineText"},
                 {"name": "attachments", "type": "multilineText"},
                 {"name": "tasklistId", "type": "singleLineText"},
                 {"name": "parentTask", "type": "singleLineText"},
                 {"name": "startDate", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
                 {"name": "dueDate", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
                 {"name": "updatedAt", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+                # UpdatedBy - both ID and name
+                {"name": "updatedById", "type": "singleLineText"},
                 {"name": "updatedBy", "type": "singleLineText"},
                 {"name": "createdAt", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+                # CreatedBy - both ID and name
+                {"name": "createdById", "type": "singleLineText"},
                 {"name": "createdBy", "type": "singleLineText"},
-                {"name": "createdByUserId", "type": "singleLineText"},
                 {"name": "dateUpdated", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
                 {"name": "estimateMinutes", "type": "number", "options": {"precision": 0}},
                 {"name": "accumulatedEstimatedMinutes", "type": "number", "options": {"precision": 0}},

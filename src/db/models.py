@@ -76,6 +76,8 @@ class Task:
     status: Optional[str] = None
     tags: List[str] = field(default_factory=list)
     assignees: List[str] = field(default_factory=list)
+    created_by: Optional[str] = None
+    updated_by: Optional[str] = None
     due_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     deleted: bool = False
@@ -92,6 +94,8 @@ class Task:
             "status": self.status,
             "tags": self.tags,
             "assignees": self.assignees,
+            "created_by": self.created_by,
+            "updated_by": self.updated_by,
             "due_at": self.due_at.isoformat() if self.due_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "deleted": self.deleted,
