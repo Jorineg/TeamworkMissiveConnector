@@ -56,6 +56,12 @@ QUEUE_INBOX_FILE = QUEUE_DIR / "inbox.jsonl"
 QUEUE_OFFSET_FILE = QUEUE_DIR / "offset.json"
 QUEUE_DLQ_FILE = QUEUE_DIR / "dlq.jsonl"
 
+# Spool queue settings
+SPOOL_BASE_DIR = QUEUE_DIR / "spool"
+SPOOL_TEAMWORK_DIR = SPOOL_BASE_DIR / "teamwork"
+SPOOL_MISSIVE_DIR = SPOOL_BASE_DIR / "missive"
+SPOOL_RETRY_SECONDS = int(os.getenv("SPOOL_RETRY_SECONDS", "60"))
+
 
 def validate_config():
     """Validate that required configuration is present."""

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from src import settings
 from src.logging_conf import logger
-from src.queue.file_queue import FileQueue
+from src.queue.spool_queue import SpoolQueue
 from src.queue.models import QueueItem
 from src.http.security import verify_teamwork_webhook, verify_missive_webhook
 
@@ -13,8 +13,8 @@ from src.http.security import verify_teamwork_webhook, verify_missive_webhook
 # Create Flask app
 app = Flask(__name__)
 
-# Create queue instance
-queue = FileQueue()
+# Create queue instance (spool-based)
+queue = SpoolQueue()
 
 
 @app.route("/health", methods=["GET"])

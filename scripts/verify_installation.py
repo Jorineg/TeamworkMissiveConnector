@@ -55,7 +55,7 @@ def main():
     print("\n[Queue System]")
     all_ok &= check_directory(project_root / "src" / "queue")
     all_ok &= check_file(project_root / "src" / "queue" / "__init__.py")
-    all_ok &= check_file(project_root / "src" / "queue" / "file_queue.py")
+    all_ok &= check_file(project_root / "src" / "queue" / "spool_queue.py")
     all_ok &= check_file(project_root / "src" / "queue" / "models.py")
     
     # Check workers
@@ -154,12 +154,7 @@ def main():
         print(f"  {RED}✗{RESET} psycopg2 (not installed)")
         all_ok = False
     
-    try:
-        import portalocker
-        print(f"  {GREEN}✓{RESET} portalocker")
-    except ImportError:
-        print(f"  {RED}✗{RESET} portalocker (not installed)")
-        all_ok = False
+    # portalocker no longer required
     
     try:
         from dotenv import load_dotenv
@@ -178,10 +173,10 @@ def main():
         all_ok = False
     
     try:
-        from src.queue.file_queue import FileQueue
-        print(f"  {GREEN}✓{RESET} src.queue.file_queue")
+        from src.queue.spool_queue import SpoolQueue
+        print(f"  {GREEN}✓{RESET} src.queue.spool_queue")
     except Exception as e:
-        print(f"  {RED}✗{RESET} src.queue.file_queue: {e}")
+        print(f"  {RED}✗{RESET} src.queue.spool_queue: {e}")
         all_ok = False
     
     try:

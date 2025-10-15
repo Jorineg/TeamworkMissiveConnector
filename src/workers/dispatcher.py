@@ -6,7 +6,7 @@ from typing import Optional
 
 from src import settings
 from src.logging_conf import logger
-from src.queue.file_queue import FileQueue
+from src.queue.spool_queue import SpoolQueue
 from src.queue.models import QueueItem
 from src.db.interface import DatabaseInterface
 from src.db.airtable_impl import AirtableDatabase
@@ -19,7 +19,7 @@ class WorkerDispatcher:
     """Dispatcher that processes queued events."""
     
     def __init__(self):
-        self.queue = FileQueue()
+        self.queue = SpoolQueue()
         self.db = self._create_database()
         self.teamwork_handler = TeamworkEventHandler(self.db)
         self.missive_handler = MissiveEventHandler(self.db)

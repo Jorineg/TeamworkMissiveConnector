@@ -20,8 +20,8 @@ This document describes the architecture of the Teamwork & Missive Connector sys
          └───────┬────────┘
                  │
          ┌───────▼────────┐
-         │  JSONL Queue   │
-         │  (Persistent)  │
+         │  Spool Queue   │
+         │ (Persistent)   │
          └───────┬────────┘
                  │
          ┌───────▼────────┐
@@ -58,17 +58,15 @@ This document describes the architecture of the Teamwork & Missive Connector sys
 - Idempotent: Safe to receive duplicate events
 - Fast: Minimal processing in webhook handler
 
-### 2. Persistent Queue (`src/queue/file_queue.py`)
+### 2. Persistent Queue (`src/queue/spool_queue.py`)
 
-**Purpose**: Reliable, crash-safe event queue.
+**Purpose**: Reliable, crash-safe event queue with minimal complexity.
 
 **Implementation**:
-- JSONL format (one JSON object per line)
-- File locking with `portalocker`
-- fsync after writes
-- Offset tracking for reads
-- Automatic compaction when file grows large
-- Dead letter queue for poison messages
+- Spool directories: `data/queue/spool/{teamwork,missive}/`
+- One file per event ID: `<id>.evt`
+- On failure: rename to `<id>.retry` and retry after `SPOOL_RETRY_SECONDS`
+- Natural dedup via exclusive file creation
 
 **Guarantees**:
 - At-least-once delivery
@@ -184,7 +182,7 @@ This document describes the architecture of the Teamwork & Missive Connector sys
 
 1. **Receive**: Teamwork/Missive → ngrok → Flask app
 2. **Validate**: Check signature (if configured)
-3. **Enqueue**: Append to `data/queue/inbox.jsonl` with fsync
+3. **Enqueue**: Create `<id>.evt` in `data/queue/spool/{source}/`
 4. **Respond**: Return 200 OK to webhook sender
 5. **Dequeue**: Worker reads from queue
 6. **Route**: Dispatcher routes to handler (Teamwork/Missive)
@@ -222,10 +220,8 @@ This document describes the architecture of the Teamwork & Missive Connector sys
   - Network delays
 
 ### Retry Logic
-- Transient errors → exponential backoff retry
-- Max 3 attempts per item
-- Poison messages → dead letter queue
-- Rate limits → automatic retry with delay
+- Failures rename to `.retry` and are retried approximately every `SPOOL_RETRY_SECONDS`
+- No DLQ; failures remain visible and reattempted periodically
 
 ### Graceful Shutdown
 - SIGINT/SIGTERM → finish current item, then exit

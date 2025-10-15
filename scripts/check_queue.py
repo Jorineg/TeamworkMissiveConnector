@@ -1,54 +1,48 @@
 #!/usr/bin/env python3
-"""Script to check queue status."""
+"""Script to check spool queue status."""
 import sys
+import time
 from pathlib import Path
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.queue.file_queue import FileQueue
 from src import settings
 
 
+def list_files(dir_path: Path, suffix: str):
+    if not dir_path.exists():
+        return []
+    files = [p for p in dir_path.iterdir() if p.is_file() and p.suffix == suffix]
+    files.sort(key=lambda p: p.stat().st_mtime)
+    return files
+
+
 def main():
-    queue = FileQueue()
-    
-    print("Queue Status")
+    print("Spool Queue Status")
     print("=" * 50)
-    print(f"Inbox file: {settings.QUEUE_INBOX_FILE}")
-    print(f"Offset file: {settings.QUEUE_OFFSET_FILE}")
-    print(f"DLQ file: {settings.QUEUE_DLQ_FILE}")
+    tw = settings.SPOOL_TEAMWORK_DIR
+    ms = settings.SPOOL_MISSIVE_DIR
+    print(f"Teamwork spool dir: {tw}")
+    print(f"Missive spool dir:  {ms}")
+    print(f"Retry cadence (s):  {settings.SPOOL_RETRY_SECONDS}")
     print()
-    
-    # Queue size
-    size = queue.size()
-    print(f"Items in queue: {size}")
-    
-    # File sizes
-    if settings.QUEUE_INBOX_FILE.exists():
-        inbox_size = settings.QUEUE_INBOX_FILE.stat().st_size
-        print(f"Inbox file size: {inbox_size:,} bytes")
-    
-    if settings.QUEUE_DLQ_FILE.exists():
-        dlq_lines = sum(1 for line in open(settings.QUEUE_DLQ_FILE) if line.strip())
-        print(f"Dead letter queue items: {dlq_lines}")
-    
-    # Current offset
-    offset = queue._load_offset()
-    print(f"Current offset: {offset:,} bytes")
-    print()
-    
-    # Peek at next item
-    if size > 0:
-        print("Next item to process:")
-        print("-" * 50)
-        item = queue.dequeue()
-        if item:
-            print(f"Source: {item.source}")
-            print(f"Event type: {item.event_type}")
-            print(f"External ID: {item.external_id}")
-            print(f"Attempts: {item.attempts}")
-            print(f"Enqueued at: {item.enqueued_at}")
+
+    for name, dir_path in (("Teamwork", tw), ("Missive", ms)):
+        evt = list_files(dir_path, ".evt")
+        rty = list_files(dir_path, ".retry")
+        print(f"[{name}] pending: {len(evt)}  retry: {len(rty)}")
+        # Show up to 5 oldest of each
+        for label, files in (("evt", evt[:5]), ("retry", rty[:5])):
+            for p in files:
+                age = int(time.time() - p.stat().st_mtime)
+                wait = max(0, settings.SPOOL_RETRY_SECONDS - age) if label == "retry" else 0
+                print(f"  {label}: {p.name}  age={age}s  wait={wait}s")
+        print()
+
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":

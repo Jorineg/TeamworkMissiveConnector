@@ -7,7 +7,7 @@ from pyngrok import ngrok, conf
 
 from src import settings
 from src.logging_conf import logger
-from src.queue.file_queue import FileQueue
+from src.queue.spool_queue import SpoolQueue
 from src.queue.models import QueueItem
 from src.db.interface import DatabaseInterface
 from src.db.airtable_impl import AirtableDatabase
@@ -24,7 +24,7 @@ class StartupManager:
     """Manages startup operations including ngrok and backfill."""
     
     def __init__(self):
-        self.queue = FileQueue()
+        self.queue = SpoolQueue()
         self.db = self._create_database()
         self.teamwork_client = TeamworkClient()
         self.missive_client = MissiveClient()
@@ -159,7 +159,7 @@ class StartupManager:
                     source="teamwork",
                     event_type="task.backfill",
                     external_id=task_id,
-                    payload={"task": task_data}
+                    payload={}
                 )
                 self.queue.enqueue(item)
             
@@ -217,7 +217,7 @@ class StartupManager:
                     source="missive",
                     event_type="conversation.backfill",
                     external_id=conv_id,
-                    payload={"conversation": conv_data}
+                    payload={}
                 )
                 self.queue.enqueue(item)
             

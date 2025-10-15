@@ -6,7 +6,7 @@ A reliable Python-based connector system that synchronizes data from Teamwork (t
 
 - **Webhook-based real-time sync** for Teamwork tasks and Missive emails
 - **Startup backfill** to catch missed events during downtime
-- **Persistent queue** (JSONL-based) ensures no events are lost
+- **Persistent queue** (spool-based) ensures no events are lost
 - **Attachment handling** from Missive emails (uploads to Airtable)
 - **Soft deletion** support with `deleted` flag
 - **Database abstraction** for easy migration from Airtable to PostgreSQL
@@ -22,7 +22,7 @@ TeamworkMissiveConnector/
 │   ├── logging_conf.py             # Logging setup
 │   ├── startup.py                  # ngrok tunnel & backfill
 │   ├── queue/
-│   │   ├── file_queue.py           # JSONL queue implementation
+│   │   ├── spool_queue.py          # Spool directory queue implementation
 │   │   └── models.py               # Queue item schemas
 │   ├── workers/
 │   │   ├── dispatcher.py           # Queue processor & retry logic
@@ -156,7 +156,7 @@ Check logs in `logs/app.log` for activity and errors.
 
 ### Webhook Flow
 1. Teamwork/Missive sends webhook → Flask endpoint
-2. Endpoint validates & enqueues event → JSONL queue
+2. Endpoint validates & enqueues event → Spool queue (one file per ID)
 3. Worker dequeues → processes → stores in DB
 4. Checkpoint updated
 
@@ -189,7 +189,7 @@ Check logs in `logs/app.log` for activity and errors.
 ### Queue not processing
 - Check worker is running: `ps aux | grep dispatcher`
 - Check worker logs in `logs/app.log`
-- Inspect queue file: `data/queue/inbox.jsonl`
+- Inspect spool: `dir data/queue/spool/*`
 
 ### Database errors
 - Verify API keys in `.env`
