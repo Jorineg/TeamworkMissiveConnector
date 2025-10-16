@@ -45,6 +45,9 @@ class MissiveEventHandler:
                     self.db.mark_email_deleted(msg_id)
             return None
         
+        # Fetch conversation data to get labels (labels are on conversation, not messages)
+        conversation_labels = self._fetch_conversation_labels(conversation_id)
+        
         # Always fetch fresh messages from API to ensure consistency
         messages = self.client.get_conversation_messages(conversation_id)
         
@@ -60,7 +63,7 @@ class MissiveEventHandler:
                         # Use full message data which includes complete body
                         message_data = full_message
                 
-                email = self._parse_message(message_data, conversation_id)
+                email = self._parse_message(message_data, conversation_id, conversation_labels)
                 emails.append(email)
             except Exception as e:
                 logger.error(f"Error processing message: {e}", exc_info=True)
@@ -92,8 +95,45 @@ class MissiveEventHandler:
             return str(payload["id"])
         return ""
     
-    def _parse_message(self, data: Dict[str, Any], conversation_id: str) -> Email:
-        """Parse Missive message data into Email model."""
+    def _fetch_conversation_labels(self, conversation_id: str) -> List[str]:
+        """
+        Fetch labels from a conversation.
+        Labels are stored on the conversation object, not individual messages.
+        
+        Args:
+            conversation_id: Conversation ID
+        
+        Returns:
+            List of label names
+        """
+        try:
+            conversation = self.client.get_conversation(conversation_id)
+            if conversation:
+                shared_label_names = conversation.get("shared_label_names", "")
+                
+                # Parse comma-separated label names into a list
+                if shared_label_names:
+                    # Split by comma and strip whitespace from each label
+                    labels = [label.strip() for label in shared_label_names.split(",") if label.strip()]
+                    logger.debug(f"Found {len(labels)} labels for conversation {conversation_id}: {labels}")
+                    return labels
+        except Exception as e:
+            logger.error(f"Error fetching conversation labels for {conversation_id}: {e}", exc_info=True)
+        
+        return []
+    
+    def _parse_message(self, data: Dict[str, Any], conversation_id: str, conversation_labels: List[str] = None) -> Email:
+        """
+        Parse Missive message data into Email model.
+        
+        Args:
+            data: Message data from Missive API
+            conversation_id: Conversation ID
+            conversation_labels: Labels from the conversation (labels are on conversation, not messages)
+        
+        Returns:
+            Email object
+        """
         message_id = str(data.get("id", ""))
         
         # Parse dates
@@ -159,11 +199,8 @@ class MissiveEventHandler:
             body_text = data.get("preview", "")
             body_html = ""
         
-        # Parse labels/tags
-        labels = []
-        if data.get("labels"):
-            labels = [label.get("name", str(label)) if isinstance(label, dict) else str(label)
-                     for label in data["labels"]]
+        # Use labels from conversation (labels are on conversation, not individual messages)
+        labels = conversation_labels if conversation_labels else []
         
         # Check if deleted/trashed
         deleted = data.get("deleted", False) or data.get("trashed", False)

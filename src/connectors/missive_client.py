@@ -86,6 +86,24 @@ class MissiveClient:
         
         return conversations
     
+    def get_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a conversation by ID.
+        
+        Args:
+            conversation_id: Conversation ID
+        
+        Returns:
+            Conversation dict or None
+        """
+        try:
+            response = self._request("GET", f"/conversations/{conversation_id}")
+            if response and "conversations" in response and len(response["conversations"]) > 0:
+                return response["conversations"][0]
+        except Exception as e:
+            logger.error(f"Error fetching conversation {conversation_id}: {e}", exc_info=True)
+        return None
+    
     def get_conversation_messages(self, conversation_id: str) -> List[Dict[str, Any]]:
         """Get all messages in a conversation."""
         try:

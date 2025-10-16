@@ -2,13 +2,22 @@
 
 Complete guide to setting up the Teamwork & Missive Connector.
 
-## Prerequisites
+## What You'll Need
 
-- Python 3.9 or later
-- Airtable account (or PostgreSQL database)
-- Teamwork account with API access
-- Missive account with API access
-- ngrok account (for local development **with webhooks only**)
+Before starting, make sure you have:
+
+- **Python 3.9 or later** installed on your computer
+  - Check by opening Terminal/Command Prompt and typing: `python --version` or `python3 --version`
+  - If not installed, download from [python.org](https://www.python.org/downloads/)
+- **Airtable account** (the free tier works fine)
+  - Sign up at [airtable.com](https://airtable.com) if you don't have one
+  - Alternative: PostgreSQL database (more advanced, requires technical knowledge)
+- **Teamwork account** with API access
+  - You'll need admin or project manager permissions to get an API key
+- **Missive account** with API access
+  - You'll need the API token from your Missive settings
+- **ngrok account** (only needed if using webhook mode for local development)
+  - Free tier works fine - sign up at [ngrok.com](https://ngrok.com)
 
 ## Operation Modes
 
@@ -34,18 +43,26 @@ Choose the setup method based on your preferred operation mode:
 
 **Step 1: Install Dependencies (1 min)**
 
-```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+Open Terminal (macOS/Linux) or Command Prompt (Windows) and navigate to the project folder, then run:
 
-# Install packages
+```bash
+# Create virtual environment (a clean Python environment for this project)
+python3 -m venv venv
+
+# Activate it
+source venv/bin/activate  # On macOS/Linux
+# OR
+venv\Scripts\activate  # On Windows
+
+# Install required packages
 pip install -r requirements.txt
 ```
 
+**What this does**: Creates an isolated Python environment and installs all necessary packages listed in `requirements.txt`.
+
 **Step 2: Configure Environment (2 min)**
 
-Create a `.env` file with the following:
+Create a new file named `.env` in the project folder (same folder as README.md) and add the following:
 
 ```env
 # Teamwork (get from: Settings > API & Webhooks)
@@ -73,18 +90,26 @@ TIMEZONE=Europe/Berlin
 
 **Step 1: Install Dependencies (1 min)**
 
-```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+Same as Option A - open Terminal (macOS/Linux) or Command Prompt (Windows) and navigate to the project folder, then run:
 
-# Install packages
+```bash
+# Create virtual environment (a clean Python environment for this project)
+python3 -m venv venv
+
+# Activate it
+source venv/bin/activate  # On macOS/Linux
+# OR
+venv\Scripts\activate  # On Windows
+
+# Install required packages
 pip install -r requirements.txt
 ```
 
+**What this does**: Creates an isolated Python environment and installs all necessary packages listed in `requirements.txt`.
+
 **Step 2: Configure Environment (2 min)**
 
-Create a `.env` file with the following:
+Create a new file named `.env` in the project folder (same folder as README.md) and add the following:
 
 ```env
 # Teamwork (get from: Settings > API & Webhooks)
@@ -112,22 +137,31 @@ TIMEZONE=Europe/Berlin
 
 **Note**: No ngrok token needed for polling-only mode!
 
-**For Airtable Personal Access Token:**
+**How to get your Airtable Personal Access Token:**
 1. Go to: https://airtable.com/create/tokens
 2. Click "Create new token"
-3. Add scopes: `schema.bases:write`, `data.records:write`, `data.records:read`
-4. Select your base
-5. Copy token to `.env`
+3. Give it a name (e.g., "Teamwork Missive Connector")
+4. Add these three scopes (permissions):
+   - `schema.bases:write` (allows creating tables)
+   - `data.records:write` (allows adding/updating data)
+   - `data.records:read` (allows reading data)
+5. Under "Access", select the specific base you want to use
+6. Click "Create token"
+7. Copy the token and paste it into your `.env` file as `AIRTABLE_API_KEY`
 
 ### Step 3: Run (2 min)
 
-```bash
-# On macOS/Linux
-./scripts/run_local.sh
+**On macOS/Linux:**
+- Open Terminal
+- Navigate to the project folder
+- Run: `./scripts/run_local.sh`
 
-# On Windows
-scripts\run_local.bat
-```
+**On Windows:**
+- Open Command Prompt or PowerShell
+- Navigate to the project folder
+- Run: `scripts\run_local.bat`
+
+**Tip**: You can navigate to the project folder by typing `cd ` (with a space) and then dragging the folder into the terminal window.
 
 ### What You'll See
 
@@ -280,11 +314,14 @@ No webhooks will be configured. System relies on periodic polling.
 
 ### Check Logs
 
-```bash
-tail -f logs/app.log
-```
+**View the application logs:**
+- Open the file `logs/app.log` in any text editor
+- Or on macOS/Linux, use terminal: `tail -f logs/app.log`
+- Or on Windows, use Command Prompt: `type logs\app.log`
 
 ### Check Queue Status
+
+See how many events are waiting to be processed:
 
 ```bash
 python scripts/check_queue.py
@@ -292,11 +329,15 @@ python scripts/check_queue.py
 
 ### Manual Backfill
 
+Manually fetch recent updates from Teamwork and Missive:
+
 ```bash
 python scripts/manual_backfill.py
 ```
 
 ### Validate Configuration
+
+Check if your `.env` file is set up correctly:
 
 ```bash
 python scripts/validate_config.py
@@ -315,12 +356,13 @@ For production deployment without ngrok:
    # NGROK_AUTHTOKEN=...
    ```
 
-3. Configure your web server (nginx/Apache) to proxy requests to the Flask app on port 5000
+3. Set up a reverse proxy (this forwards web requests to your Flask app):
+   - If using nginx or Apache, configure it to send requests to `localhost:5000`
+   - Consult your web server's documentation for reverse proxy setup
 
-4. Create systemd service:
-   ```bash
-   sudo nano /etc/systemd/system/teamwork-missive.service
-   ```
+4. Create a systemd service file (this makes the app run automatically):
+   - Open a new file in your text editor: `/etc/systemd/system/teamwork-missive.service`
+   - Add this content (replace paths with your actual paths):
    
    ```ini
    [Unit]
@@ -339,17 +381,17 @@ For production deployment without ngrok:
    WantedBy=multi-user.target
    ```
 
-4. Start service:
-   ```bash
-   sudo systemctl enable teamwork-missive
-   sudo systemctl start teamwork-missive
-   ```
+5. Start the service:
+   - Run: `sudo systemctl enable teamwork-missive`
+   - Run: `sudo systemctl start teamwork-missive`
 
-5. Start worker separately or use supervisor for both processes
+**Note**: For production deployment, consider getting help from a system administrator if you're not familiar with Linux server management.
 
 ### Option 2: Docker
 
-Create `Dockerfile`:
+**Note**: This option requires Docker knowledge. If you're not familiar with Docker, consider Option 1 or ask for technical help.
+
+Create a file named `Dockerfile` in the project folder:
 ```dockerfile
 FROM python:3.9-slim
 
@@ -362,7 +404,7 @@ COPY . .
 CMD ["python", "-m", "src.app"]
 ```
 
-Build and run:
+Build and run (in Terminal/Command Prompt):
 ```bash
 docker build -t teamwork-missive-connector .
 docker run -d --env-file .env teamwork-missive-connector
@@ -372,22 +414,30 @@ docker run -d --env-file .env teamwork-missive-connector
 
 ### Step 1: Set Up Database
 
+**Install and configure PostgreSQL:**
+
+1. Install PostgreSQL on your system (method depends on your operating system)
+2. Create a new database called `teamwork_missive`
+3. Create a database user with a password
+4. Grant that user full access to the database
+
+**If you're comfortable with terminal commands (Linux/macOS):**
 ```bash
-# Install PostgreSQL
 sudo apt-get install postgresql
-
-# Create database
 sudo -u postgres createdb teamwork_missive
-
-# Create user
 sudo -u postgres psql
 CREATE USER youruser WITH PASSWORD 'yourpassword';
 GRANT ALL PRIVILEGES ON DATABASE teamwork_missive TO youruser;
 ```
 
+**If you're not familiar with PostgreSQL**, consider:
+- Using a managed database service (like AWS RDS, Heroku Postgres, etc.)
+- Getting help from a database administrator
+- Sticking with Airtable (it's simpler for non-technical users)
+
 ### Step 2: Update Configuration
 
-Edit `.env`:
+Open your `.env` file in a text editor and update:
 ```env
 DB_BACKEND=postgres
 PG_DSN=postgresql://youruser:yourpassword@localhost:5432/teamwork_missive
@@ -395,59 +445,125 @@ PG_DSN=postgresql://youruser:yourpassword@localhost:5432/teamwork_missive
 
 ### Step 3: Restart Application
 
+Stop the current application (press `Ctrl+C` in the terminal where it's running), then start it again:
+
+**On macOS/Linux:**
 ```bash
-# Tables will be created automatically on first run
 ./scripts/run_local.sh
 ```
+
+**On Windows:**
+```
+scripts\run_local.bat
+```
+
+The PostgreSQL tables will be created automatically on first run.
 
 ## Troubleshooting
 
 ### Airtable: "Permission denied"
-- Check token has `schema.bases:write` scope
-- Ensure you're the base creator
-- Verify base ID is correct
+
+**What this means**: Your Airtable API token doesn't have the right permissions.
+
+**How to fix**:
+1. Go back to https://airtable.com/create/tokens
+2. Edit your token
+3. Make sure these scopes are checked:
+   - `schema.bases:write`
+   - `data.records:write`
+   - `data.records:read`
+4. Make sure the correct base is selected under "Access"
+5. Copy the token again and update your `.env` file
 
 ### Airtable: Tables not created
-- Check logs for specific error
-- Verify API token is valid
-- Manually create tables if needed (see field list above)
+
+**What this means**: The system couldn't automatically create the Emails and Tasks tables.
+
+**How to fix**:
+1. Open `logs/app.log` to see the specific error message
+2. Verify your Airtable API token is correct in the `.env` file
+3. Make sure you have creator permissions on the Airtable base
+4. If automatic creation keeps failing, you can manually create the tables using the field lists shown earlier in this guide
 
 ### Teamwork: Webhooks fail with 404
-- Webhooks API requires Pro plan or higher
-- If not available, manually configure webhooks:
-  1. Go to Settings > API & Webhooks
-  2. Add webhook with displayed URL
-  3. Select all 4 event types
+
+**What this means**: Your Teamwork plan doesn't support automatic webhook creation via API.
+
+**How to fix**:
+1. Check if you have a Pro plan or higher (webhooks require this)
+2. If not, you can manually set up webhooks:
+   - Go to Teamwork → Settings → API & Webhooks
+   - Click "Add Webhook"
+   - Use the URL shown in the terminal output
+   - Select these event types: task.created, task.updated, task.deleted, task.completed
+3. Alternative: Use polling-only mode (no webhooks needed) - just add `DISABLE_WEBHOOKS=true` to your `.env` file
 
 ### Teamwork: Webhooks fail with 401
-- Check `TEAMWORK_API_KEY` in `.env`
-- Verify API key is correct
-- Regenerate API key if needed
+
+**What this means**: Your Teamwork API key is incorrect or invalid.
+
+**How to fix**:
+1. Go to Teamwork → Settings → API & Webhooks
+2. Find your API key (or generate a new one)
+3. Copy it exactly as shown
+4. Update `TEAMWORK_API_KEY` in your `.env` file
+5. Restart the application
 
 ### Missive: Webhook creation fails
-- Verify `MISSIVE_API_TOKEN` is valid
-- Check token hasn't expired
-- Regenerate if needed
+
+**What this means**: Your Missive API token is incorrect or has expired.
+
+**How to fix**:
+1. Go to Missive → Settings → API
+2. Check if your token is still valid
+3. If needed, generate a new token
+4. Update `MISSIVE_API_TOKEN` in your `.env` file
+5. Restart the application
 
 ### ngrok: Tunnel fails to start
-- Verify `NGROK_AUTHTOKEN` in `.env`
-- Check ngrok service status at dashboard.ngrok.com
-- Free tier allows 1 tunnel at a time
+
+**What this means**: ngrok couldn't create a public URL for your local development.
+
+**How to fix**:
+1. Check that `NGROK_AUTHTOKEN` in your `.env` file is correct
+2. Go to https://dashboard.ngrok.com and verify your account is active
+3. Note: Free tier only allows 1 tunnel at a time - make sure you don't have ngrok running elsewhere
+4. Alternative: Use polling-only mode instead (add `DISABLE_WEBHOOKS=true` to `.env`)
 
 ### Webhooks not arriving
-- Check ngrok tunnel is active: http://localhost:4040
-- Verify webhook configuration succeeded (check logs)
-- Test webhook with ngrok inspector
+
+**What this means**: Teamwork/Missive is sending webhooks but they're not reaching your app.
+
+**How to fix**:
+1. Open http://localhost:4040 in your browser to see the ngrok inspector
+2. Check if requests are showing up there
+3. Look at `logs/app.log` to see if webhooks are being received
+4. Verify the webhook URLs in Teamwork/Missive match the ngrok URL
+5. As a backup, the system has automatic polling every 60 seconds that will catch any missed events
 
 ### Queue not processing
-- Check worker is running: `ps aux | grep dispatcher`
-- Check worker logs in `logs/app.log`
-- Inspect spool directories: `ls data/queue/spool/*/`
+
+**What this means**: Events are stuck in the queue and not being saved to your database.
+
+**How to fix**:
+1. Make sure the worker process is running (it should start automatically with the main app)
+2. Check `logs/app.log` for any error messages
+3. Look in `data/queue/spool/teamwork/` and `data/queue/spool/missive/` - if you see many files, the queue is backed up
+4. Try running `python scripts/check_queue.py` to see queue status
+5. Restart the application
 
 ### Database errors
-- Verify all API keys in `.env`
-- Check Airtable base ID and table names
-- Ensure tables were created successfully
+
+**What this means**: The system can't connect to or write to your database (Airtable or PostgreSQL).
+
+**How to fix**:
+1. Double-check all values in your `.env` file:
+   - `AIRTABLE_API_KEY` - should start with "pat"
+   - `AIRTABLE_BASE_ID` - should start with "app"
+   - Table names match what you configured
+2. Open `logs/app.log` to see the specific error
+3. For Airtable: Check that tables exist and have the right field names
+4. Try running `python scripts/validate_config.py` to check your configuration
 
 ### Events being missed
 - **Webhook mode**: The periodic backfill (every 60s) should catch missed events
@@ -522,9 +638,9 @@ Format:
 ```
 
 To reset (re-process all recent events):
-```bash
-rm data/checkpoints/*.json
-```
+- Delete all files in the `data/checkpoints/` folder
+- Or on macOS/Linux terminal: `rm data/checkpoints/*.json`
+- Or on Windows Command Prompt: `del data\checkpoints\*.json`
 
 ### Queue Management
 
@@ -537,9 +653,9 @@ Each event is stored as:
 - `{id}.retry` - Failed event (will retry)
 
 To clear queue:
-```bash
-rm -rf data/queue/spool/*/
-```
+- Delete all folders inside `data/queue/spool/teamwork/` and `data/queue/spool/missive/`
+- Or on macOS/Linux terminal: `rm -rf data/queue/spool/*/`
+- Or on Windows: Manually delete all files in those folders using File Explorer
 
 ## File Locations
 
@@ -552,10 +668,15 @@ rm -rf data/queue/spool/*/
 
 ## Getting Help
 
-- **ARCHITECTURE.md**: System architecture and design
-- **docs/api_notes.md**: API quirks and field mappings
-- **issues.md**: Known issues and resolutions
-- **Logs**: Check `logs/app.log` for errors
+If you run into problems:
+
+1. **Check the logs**: Open `logs/app.log` in a text editor to see error messages
+2. **Read the documentation**:
+   - **ARCHITECTURE.md**: Technical details about how the system works
+   - **docs/api_notes.md**: Information about API quirks and data mappings
+   - **issues.md**: Solutions to common problems
+3. **Validate your configuration**: Run `python scripts/validate_config.py` to check if your `.env` file is set up correctly
+4. **Need technical help?**: Consider reaching out to a developer or system administrator if you're stuck
 
 ## Summary
 
