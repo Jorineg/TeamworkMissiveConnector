@@ -45,6 +45,7 @@ class Email:
     sent_at: Optional[datetime] = None
     received_at: Optional[datetime] = None
     labels: List[str] = field(default_factory=list)
+    draft: bool = False
     deleted: bool = False
     deleted_at: Optional[datetime] = None
     source_links: Dict[str, str] = field(default_factory=dict)
@@ -69,6 +70,7 @@ class Email:
             "sent_at": self.sent_at.isoformat() if self.sent_at else None,
             "received_at": self.received_at.isoformat() if self.received_at else None,
             "labels": self.labels,
+            "draft": self.draft,
             "deleted": self.deleted,
             "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
             "source_links": self.source_links,

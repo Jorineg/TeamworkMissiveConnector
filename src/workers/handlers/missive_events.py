@@ -202,6 +202,9 @@ class MissiveEventHandler:
         # Use labels from conversation (labels are on conversation, not individual messages)
         labels = conversation_labels if conversation_labels else []
         
+        # Parse draft status
+        draft = data.get("draft", False)
+        
         # Check if deleted/trashed
         deleted = data.get("deleted", False) or data.get("trashed", False)
         deleted_at = None
@@ -232,6 +235,7 @@ class MissiveEventHandler:
             sent_at=sent_at,
             received_at=received_at or sent_at,
             labels=labels,
+            draft=draft,
             deleted=deleted,
             deleted_at=deleted_at,
             source_links={"missive_url": data.get("web_url", "")} if data.get("web_url") else {},

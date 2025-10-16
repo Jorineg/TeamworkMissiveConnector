@@ -91,6 +91,7 @@ class AirtableSetup:
                 {"name": "Sent At", "type": "dateTime", "options": _get_datetime_field_options()},
                 {"name": "Received At", "type": "dateTime", "options": _get_datetime_field_options()},
                 {"name": "Labels Text", "type": "multilineText"},
+                {"name": "Draft", "type": "checkbox", "options": {"color": "yellowBright", "icon": "check"}},
                 {"name": "Deleted", "type": "checkbox", "options": {"color": "greenBright", "icon": "check"}},
                 {"name": "Deleted At", "type": "dateTime", "options": _get_datetime_field_options()},
                 {"name": "Source Links", "type": "multilineText"},

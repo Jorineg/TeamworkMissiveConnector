@@ -109,6 +109,7 @@ class AirtableDatabase(DatabaseInterface):
                     "In Reply To": ", ".join(email.in_reply_to) if email.in_reply_to else "",
                     "Body Text": body_text,
                     "Body HTML": body_html,
+                    "Draft": email.draft,
                     "Deleted": email.deleted,
                     "Source Links": json.dumps(email.source_links)
                 }
