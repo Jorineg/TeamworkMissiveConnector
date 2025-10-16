@@ -311,14 +311,13 @@ For production deployment without ngrok:
 1. Deploy to server with public IP or domain
 2. Update `.env`:
    ```env
-   # Remove ngrok token
+   # Remove ngrok token (not needed with public domain)
    # NGROK_AUTHTOKEN=...
-   
-   # Add your domain
-   PUBLIC_URL=https://yourdomain.com
    ```
 
-3. Create systemd service:
+3. Configure your web server (nginx/Apache) to proxy requests to the Flask app on port 5000
+
+4. Create systemd service:
    ```bash
    sudo nano /etc/systemd/system/teamwork-missive.service
    ```

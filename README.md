@@ -2,6 +2,11 @@
 
 A reliable Python-based connector system that synchronizes data from Teamwork (tasks) and Missive (emails) into your database (Airtable initially, with PostgreSQL support for future migration).
 
+## 📚 Documentation
+
+- **[SETUP.md](SETUP.md)** - Complete setup guide with step-by-step instructions
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical architecture and design decisions
+
 ## Features
 
 - **Fully automated setup** - Tables and webhooks created automatically
@@ -116,13 +121,6 @@ TeamworkMissiveConnector/
 ├── logs/                           # Application logs
 └── scripts/                        # Helper scripts
 ```
-
-## Documentation
-
-- **[SETUP.md](SETUP.md)** - Detailed setup guide with all options
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical architecture and design decisions
-- **[docs/api_notes.md](docs/api_notes.md)** - API quirks and field mappings
-- **[issues.md](issues.md)** - Known issues and resolutions
 
 ## Key Features Explained
 

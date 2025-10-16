@@ -368,10 +368,11 @@ Stored in `data/checkpoints/{source}.json`:
 }
 ```
 
-### Queue Files
-- `data/queue/inbox.jsonl`: Pending events
-- `data/queue/offset.json`: Read position
-- `data/queue/dlq.jsonl`: Failed events
+### Spool Queue Files
+- `data/queue/spool/teamwork/*.evt`: Pending Teamwork events
+- `data/queue/spool/teamwork/*.retry`: Failed Teamwork events (will retry)
+- `data/queue/spool/missive/*.evt`: Pending Missive events
+- `data/queue/spool/missive/*.retry`: Failed Missive events (will retry)
 
 ## Security
 
@@ -407,7 +408,8 @@ python scripts/check_queue.py
 ### Manual Operations
 - Backfill: `python scripts/manual_backfill.py`
 - Check logs: `tail -f logs/app.log`
-- Inspect queue: `cat data/queue/inbox.jsonl`
+- Inspect queue: `ls -la data/queue/spool/*/`
+- Check queue status: `python scripts/check_queue.py`
 
 ## Future Enhancements
 
