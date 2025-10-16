@@ -14,6 +14,9 @@ from src.logging_conf import logger
 class AirtableDatabase(DatabaseInterface):
     """Airtable implementation of database operations."""
     
+    # Airtable long text field limit
+    MAX_LONG_TEXT_LENGTH = 100000
+    
     def __init__(self):
         self.api = Api(settings.AIRTABLE_API_KEY)
         self.base = self.api.base(settings.AIRTABLE_BASE_ID)
@@ -23,6 +26,56 @@ class AirtableDatabase(DatabaseInterface):
         # Cache for record lookups by external ID
         self._email_cache: Dict[str, str] = {}  # email_id -> airtable_record_id
         self._task_cache: Dict[str, str] = {}  # task_id -> airtable_record_id
+    
+    def _sanitize_long_text(self, text: Optional[str], field_name: str = "field", record_id: str = "") -> str:
+        """
+        Sanitize text for Airtable long text fields.
+        
+        Airtable long text fields have a 100,000 character limit and may reject
+        certain control characters or invalid UTF-8 sequences.
+        
+        Args:
+            text: The text to sanitize
+            field_name: Name of the field (for logging)
+            record_id: ID of the record (for logging)
+        
+        Returns:
+            Sanitized text string (empty string if input is None)
+        """
+        if text is None:
+            return ""
+        
+        # Ensure it's a string
+        if not isinstance(text, str):
+            logger.warning(f"Non-string value for {field_name} in {record_id}, converting to string")
+            text = str(text)
+        
+        # Remove null bytes and other problematic control characters
+        # Keep common whitespace (newlines, tabs, spaces)
+        text = text.replace('\x00', '')  # Null bytes
+        
+        # Remove other control characters except newline, carriage return, and tab
+        sanitized_chars = []
+        for char in text:
+            code = ord(char)
+            # Keep printable chars, newline (10), carriage return (13), tab (9)
+            if code >= 32 or code in (9, 10, 13):
+                sanitized_chars.append(char)
+        
+        text = ''.join(sanitized_chars)
+        
+        # Truncate if exceeds Airtable's limit
+        if len(text) > self.MAX_LONG_TEXT_LENGTH:
+            logger.warning(
+                f"{field_name} exceeds Airtable limit of {self.MAX_LONG_TEXT_LENGTH} chars "
+                f"(was {len(text)} chars) for {record_id}, truncating"
+            )
+            text = text[:self.MAX_LONG_TEXT_LENGTH]
+            # Add truncation indicator
+            if len(text) > 50:
+                text = text[:-50] + "\n\n[... Content truncated due to length ...]"
+        
+        return text
     
     def upsert_email(self, email: Email) -> None:
         """Insert or update an email record."""
@@ -36,10 +89,15 @@ class AirtableDatabase(DatabaseInterface):
         try:
             records = []
             for email in emails:
+                # Sanitize long text fields to comply with Airtable's requirements
+                subject = self._sanitize_long_text(email.subject, "Subject", email.email_id)
+                body_text = self._sanitize_long_text(email.body_text, "Body Text", email.email_id)
+                body_html = self._sanitize_long_text(email.body_html, "Body HTML", email.email_id)
+                
                 # Build Airtable fields
                 fields = {
                     "Email ID": email.email_id,
-                    "Subject": email.subject or "",
+                    "Subject": subject,
                     "From": email.from_address or "",
                     "From Name": email.from_name or "",
                     "To": ", ".join(email.to_addresses) if email.to_addresses else "",
@@ -49,8 +107,8 @@ class AirtableDatabase(DatabaseInterface):
                     "Bcc": ", ".join(email.bcc_addresses) if email.bcc_addresses else "",
                     "Bcc Names": ", ".join(email.bcc_names) if email.bcc_names else "",
                     "In Reply To": ", ".join(email.in_reply_to) if email.in_reply_to else "",
-                    "Body Text": email.body_text or "",
-                    "Body HTML": email.body_html or "",
+                    "Body Text": body_text,
+                    "Body HTML": body_html,
                     "Deleted": email.deleted,
                     "Source Links": json.dumps(email.source_links)
                 }
@@ -98,7 +156,35 @@ class AirtableDatabase(DatabaseInterface):
             logger.info(f"Batch upserted {len(emails)} emails to Airtable")
         
         except Exception as e:
-            logger.error(f"Failed to batch upsert emails: {e}", exc_info=True)
+            # Log detailed information about the batch that failed
+            logger.error(f"Failed to batch upsert {len(emails)} emails: {e}", exc_info=True)
+            
+            # Log email IDs and body lengths for debugging
+            for i, email in enumerate(emails):
+                body_html_len = len(email.body_html) if email.body_html else 0
+                body_text_len = len(email.body_text) if email.body_text else 0
+                logger.error(
+                    f"  Email {i+1}/{len(emails)}: ID={email.email_id}, "
+                    f"body_html_len={body_html_len}, body_text_len={body_text_len}, "
+                    f"subject_len={len(email.subject) if email.subject else 0}"
+                )
+            
+            # Try to process individually to identify the problematic record
+            if len(emails) > 1:
+                logger.info("Attempting to upsert emails individually to identify problematic record...")
+                failed_emails = []
+                for email in emails:
+                    try:
+                        # Try individual upsert
+                        self.upsert_emails_batch([email])
+                        logger.info(f"Successfully upserted email {email.email_id} individually")
+                    except Exception as individual_error:
+                        logger.error(f"Failed to upsert email {email.email_id}: {individual_error}")
+                        failed_emails.append(email.email_id)
+                
+                if failed_emails:
+                    logger.error(f"Failed email IDs: {failed_emails}")
+            
             raise
     
     def upsert_task(self, task: Task) -> None:
@@ -133,7 +219,14 @@ class AirtableDatabase(DatabaseInterface):
                 # Simple scalars
                 set_if_present("id", str(raw.get("id", task.task_id)))
                 set_if_present("name", raw.get("name"))
-                set_if_present("description", raw.get("description"))
+                # Sanitize description as it can be long text
+                if raw.get("description"):
+                    description = self._sanitize_long_text(
+                        raw.get("description"), 
+                        "description", 
+                        str(raw.get("id", task.task_id))
+                    )
+                    set_if_present("description", description)
                 set_if_present("status", raw.get("status"))
                 set_if_present("priority", raw.get("priority"))
                 if raw.get("progress") is not None:
@@ -211,7 +304,17 @@ class AirtableDatabase(DatabaseInterface):
             logger.info(f"Batch upserted {len(tasks)} tasks to Airtable")
         
         except Exception as e:
-            logger.error(f"Failed to batch upsert tasks: {e}", exc_info=True)
+            # Log detailed information about the batch that failed
+            logger.error(f"Failed to batch upsert {len(tasks)} tasks: {e}", exc_info=True)
+            
+            # Log task IDs and description lengths for debugging
+            for i, task in enumerate(tasks):
+                desc_len = len(task.description) if task.description else 0
+                logger.error(
+                    f"  Task {i+1}/{len(tasks)}: ID={task.task_id}, "
+                    f"description_len={desc_len}, title={task.title}"
+                )
+            
             raise
     
     def mark_email_deleted(self, email_id: str) -> None:

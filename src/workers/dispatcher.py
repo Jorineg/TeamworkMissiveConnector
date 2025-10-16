@@ -55,8 +55,8 @@ class WorkerDispatcher:
                 items = self.queue.dequeue_batch(max_items=10)
                 
                 if not items:
-                    # Queue is empty, sleep and check again
-                    time.sleep(1)
+                    # Queue is empty, sleep briefly and check again
+                    time.sleep(0.5)
                     continue
                 
                 # Process the batch
