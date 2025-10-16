@@ -45,8 +45,12 @@ class StartupManager:
         Start ngrok tunnel and return the public URL.
         
         Returns:
-            Public URL or None if ngrok is not configured
+            Public URL or None if ngrok is not configured or webhooks are disabled
         """
+        if settings.DISABLE_WEBHOOKS:
+            logger.info("Webhooks disabled. Skipping ngrok setup.")
+            return None
+        
         if not settings.NGROK_AUTHTOKEN:
             logger.warning("NGROK_AUTHTOKEN not configured. Skipping ngrok setup.")
             logger.info("For local development, you need to manually expose your webhook endpoints.")
@@ -82,6 +86,10 @@ class StartupManager:
     
     def configure_webhooks(self, public_url: str) -> None:
         """Automatically configure webhooks with the given URL."""
+        if settings.DISABLE_WEBHOOKS:
+            logger.info("Webhooks disabled. Skipping webhook configuration.")
+            return
+        
         if not public_url:
             logger.warning("No public URL available. Skipping webhook configuration.")
             return
@@ -298,10 +306,17 @@ def main():
             logger.error("Failed to setup Airtable tables. Check permissions.")
             logger.info("Ensure your API key has schema.bases:write scope")
         
-        # Start ngrok
+        # Start ngrok (unless webhooks are disabled)
         public_url = manager.start_ngrok()
         
-        if public_url:
+        if settings.DISABLE_WEBHOOKS:
+            logger.info("="*70)
+            logger.info("POLLING MODE ACTIVE")
+            logger.info("="*70)
+            logger.info(f"Periodic backfill interval: {settings.PERIODIC_BACKFILL_INTERVAL} seconds")
+            logger.info("No webhooks will be configured. System relies on periodic polling.")
+            logger.info("="*70)
+        elif public_url:
             print("\n" + "="*70)
             print("WEBHOOK URLS - Configure these in Teamwork and Missive:")
             print("="*70)

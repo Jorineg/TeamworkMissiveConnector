@@ -46,6 +46,14 @@ AIRTABLE_TASKS_TABLE = os.getenv("AIRTABLE_TASKS_TABLE", "Tasks")
 # Timezone settings
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Berlin")
 
+# Webhook settings
+DISABLE_WEBHOOKS = os.getenv("DISABLE_WEBHOOKS", "false").lower() in ("true", "1", "yes")
+
+# Periodic backfill settings
+# Default: 5 seconds when webhooks disabled, 60 seconds when enabled
+_default_backfill_interval = "5" if DISABLE_WEBHOOKS else "60"
+PERIODIC_BACKFILL_INTERVAL = int(os.getenv("PERIODIC_BACKFILL_INTERVAL", _default_backfill_interval))
+
 # PostgreSQL settings
 PG_DSN = os.getenv("PG_DSN")
 

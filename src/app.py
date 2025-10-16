@@ -167,10 +167,10 @@ def _periodic_backfill():
     except Exception as e:
         logger.error(f"Error during periodic backfill: {e}", exc_info=True)
     
-    # Schedule next run (60 seconds)
+    # Schedule next run (configurable interval)
     if not _backfill_stop_event.is_set():
         global _backfill_timer
-        _backfill_timer = threading.Timer(60.0, _periodic_backfill)
+        _backfill_timer = threading.Timer(float(settings.PERIODIC_BACKFILL_INTERVAL), _periodic_backfill)
         _backfill_timer.daemon = True
         _backfill_timer.start()
 
@@ -178,8 +178,9 @@ def _periodic_backfill():
 def start_periodic_backfill():
     """Start the periodic backfill timer."""
     global _backfill_timer
-    logger.info("Starting periodic backfill (every 60 seconds)...")
-    _backfill_timer = threading.Timer(60.0, _periodic_backfill)
+    interval = settings.PERIODIC_BACKFILL_INTERVAL
+    logger.info(f"Starting periodic backfill (every {interval} seconds)...")
+    _backfill_timer = threading.Timer(float(interval), _periodic_backfill)
     _backfill_timer.daemon = True
     _backfill_timer.start()
 

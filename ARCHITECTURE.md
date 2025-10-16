@@ -4,29 +4,31 @@ This document describes the architecture of the Teamwork & Missive Connector sys
 
 ## High-Level Architecture
 
+### Webhook Mode (Default - DISABLE_WEBHOOKS=false)
+
 ```
 ┌─────────────┐       ┌─────────────┐
 │  Teamwork   │       │   Missive   │
 │  Webhooks   │       │  Webhooks   │
 └──────┬──────┘       └──────┬──────┘
        │                     │
-       │    ┌─────────┐     │
-       └────►  ngrok  ◄─────┘
+       │    ┌─────────┐      │
+       └────►  ngrok  ◄──────┘
             └────┬────┘
                  │
          ┌───────▼────────┐
          │  Flask App     │
-         │  (Webhooks)    │
-         └───────┬────────┘
-                 │
-         ┌───────▼────────┐
-         │  Spool Queue   │
-         │ (Persistent)   │
-         └───────┬────────┘
-                 │
-         ┌───────▼────────┐
-         │    Worker      │
-         │  Dispatcher    │
+         │  (Webhooks)    │◄────┐
+         └───────┬────────┘     │
+                 │               │ Periodic
+         ┌───────▼────────┐     │ Backfill
+         │  Spool Queue   │     │ (60s)
+         │ (Persistent)   │     │
+         └───────┬────────┘     │
+                 │          ┌───┴────┐
+         ┌───────▼────────┐ │ Timer  │
+         │    Worker      │ └───┬────┘
+         │  Dispatcher    │◄────┘
          └───────┬────────┘
                  │
          ┌───────▼────────┐
@@ -40,11 +42,101 @@ This document describes the architecture of the Teamwork & Missive Connector sys
          └────────────────┘
 ```
 
+### Polling-Only Mode (DISABLE_WEBHOOKS=true)
+
+```
+┌─────────────┐       ┌─────────────┐
+│  Teamwork   │       │   Missive   │
+│     API     │       │     API     │
+└──────▲──────┘       └──────▲──────┘
+       │                     │
+       │                     │
+       │   Periodic Polling  │
+       │      (5s default)   │
+       │                     │
+   ┌───┴─────────────────────┴───┐
+   │      Periodic Backfill      │
+   │          Timer              │
+   └───────────┬─────────────────┘
+               │
+       ┌───────▼────────┐
+       │  Spool Queue   │
+       │ (Persistent)   │
+       └───────┬────────┘
+               │
+       ┌───────▼────────┐
+       │    Worker      │
+       │  Dispatcher    │
+       └───────┬────────┘
+               │
+       ┌───────▼────────┐
+       │   Handlers     │
+       │ (Parse/Enrich) │
+       └───────┬────────┘
+               │
+       ┌───────▼────────┐
+       │   Database     │
+       │  (Airtable/PG) │
+       └────────────────┘
+```
+
+## Operation Modes
+
+The system supports two operation modes:
+
+### 1. Webhook Mode (Default)
+**Configuration**: `DISABLE_WEBHOOKS=false` (default)
+
+**How it works**:
+- ngrok tunnel provides public URL for local development
+- Webhooks automatically configured in Teamwork and Missive
+- Real-time event notifications arrive immediately
+- Periodic backfill runs every 60 seconds (default) as safety net
+- Best for: Real-time synchronization, production environments
+
+**Advantages**:
+- Near-instant updates (events arrive within seconds)
+- Lower API rate limit usage
+- More efficient than constant polling
+- Redundancy with periodic backfill backup
+
+**Requirements**:
+- Public URL (ngrok for local dev, or actual domain for production)
+- Webhook support from Teamwork and Missive
+- Open inbound network connection
+
+### 2. Polling-Only Mode
+**Configuration**: `DISABLE_WEBHOOKS=true`
+
+**How it works**:
+- No ngrok tunnel or webhooks configured
+- Periodic polling queries APIs every 5 seconds (default)
+- Checkpoint-based incremental fetching
+- Overlap window prevents missed events
+- Best for: Testing, firewalled environments, simple deployments
+
+**Advantages**:
+- No public URL or webhook setup required
+- Works behind strict firewalls
+- Simpler deployment (no ngrok needed)
+- Still reliable with frequent polling
+
+**Trade-offs**:
+- Higher API rate limit usage
+- Updates delayed by polling interval (5s default)
+- More frequent API calls
+
+**Recommended Settings**:
+```env
+DISABLE_WEBHOOKS=true
+PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
+```
+
 ## Components
 
 ### 1. Webhook Receivers (`src/app.py`)
 
-**Purpose**: Receive and validate incoming webhooks from Teamwork and Missive.
+**Purpose**: Receive and validate incoming webhooks from Teamwork and Missive (when webhooks are enabled).
 
 **Responsibilities**:
 - Accept HTTP POST requests
@@ -57,6 +149,7 @@ This document describes the architecture of the Teamwork & Missive Connector sys
 - Non-blocking: Events are queued, not processed synchronously
 - Idempotent: Safe to receive duplicate events
 - Fast: Minimal processing in webhook handler
+- Optional: Can be completely disabled for polling-only mode
 
 ### 2. Persistent Queue (`src/queue/spool_queue.py`)
 
@@ -251,10 +344,16 @@ Current implementation is single-threaded and single-process, which is more than
 ## Configuration
 
 ### Environment Variables
-See `.env.example` for all options.
 
 **Key Settings**:
 - `DB_BACKEND`: `airtable` or `postgres`
+- `DISABLE_WEBHOOKS`: `true` or `false` (default: `false`)
+  - When `true`: No webhooks or ngrok tunnel, relies solely on periodic polling
+  - When `false`: Standard webhook-based operation with periodic backfill as backup
+- `PERIODIC_BACKFILL_INTERVAL`: Polling interval in seconds
+  - Default: `5` seconds when `DISABLE_WEBHOOKS=true`
+  - Default: `60` seconds when `DISABLE_WEBHOOKS=false`
+  - Can be overridden manually for custom intervals
 - `MAX_QUEUE_ATTEMPTS`: Retry count before DLQ (default: 3)
 - `BACKFILL_OVERLAP_SECONDS`: Overlap window (default: 120)
 - `LOG_LEVEL`: `DEBUG`, `INFO`, `WARNING`, `ERROR`

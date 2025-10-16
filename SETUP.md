@@ -8,11 +8,31 @@ Complete guide to setting up the Teamwork & Missive Connector.
 - Airtable account (or PostgreSQL database)
 - Teamwork account with API access
 - Missive account with API access
-- ngrok account (for local development)
+- ngrok account (for local development **with webhooks only**)
 
-## Quick Setup (5 Minutes)
+## Operation Modes
 
-### Step 1: Install Dependencies (1 min)
+This connector supports two operation modes:
+
+1. **Webhook Mode (Default)** - Real-time sync using webhooks with periodic backfill as backup
+   - Requires: ngrok (local dev) or public URL (production)
+   - Updates: Near-instant (< 5 seconds)
+   - API calls: Minimal (only on events)
+   - Best for: Production environments, real-time requirements
+
+2. **Polling-Only Mode** - Frequent periodic polling without webhooks
+   - Requires: No public URL or ngrok needed
+   - Updates: Configurable delay (5 seconds default)
+   - API calls: Frequent (every polling interval)
+   - Best for: Testing, firewalled environments, simple setups
+
+## Quick Setup
+
+Choose the setup method based on your preferred operation mode:
+
+### Option A: Webhook Mode Setup (5 Minutes)
+
+**Step 1: Install Dependencies (1 min)**
 
 ```bash
 # Create virtual environment
@@ -23,19 +43,11 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Step 2: Configure Environment (2 min)
+**Step 2: Configure Environment (2 min)**
 
-```bash
-cp .env.example .env
-# Edit .env with your credentials
-```
-
-**Required settings:**
+Create a `.env` file with the following:
 
 ```env
-# ngrok (get from: https://dashboard.ngrok.com/get-started/your-authtoken)
-NGROK_AUTHTOKEN=your_token_here
-
 # Teamwork (get from: Settings > API & Webhooks)
 TEAMWORK_BASE_URL=https://yourcompany.teamwork.com
 TEAMWORK_API_KEY=your_key_here
@@ -47,10 +59,58 @@ MISSIVE_API_TOKEN=your_token_here
 AIRTABLE_API_KEY=your_key_here
 AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
 
-# Timezone (optional, defaults to Europe/Berlin)
-# All timestamps in Airtable will be displayed in this timezone
+# ngrok (get from: https://dashboard.ngrok.com/get-started/your-authtoken)
+NGROK_AUTHTOKEN=your_token_here
+
+# Optional: Timezone (defaults to Europe/Berlin)
+TIMEZONE=Europe/Berlin
+
+# Optional: Polling interval for backup (defaults to 60s)
+# PERIODIC_BACKFILL_INTERVAL=60
+```
+
+### Option B: Polling-Only Mode Setup (3 Minutes - No ngrok!)
+
+**Step 1: Install Dependencies (1 min)**
+
+```bash
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install packages
+pip install -r requirements.txt
+```
+
+**Step 2: Configure Environment (2 min)**
+
+Create a `.env` file with the following:
+
+```env
+# Teamwork (get from: Settings > API & Webhooks)
+TEAMWORK_BASE_URL=https://yourcompany.teamwork.com
+TEAMWORK_API_KEY=your_key_here
+
+# Missive (get from: Settings > API)
+MISSIVE_API_TOKEN=your_token_here
+
+# Airtable (get from: https://airtable.com/create/tokens)
+AIRTABLE_API_KEY=your_key_here
+AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
+
+# Disable webhooks - use polling instead
+DISABLE_WEBHOOKS=true
+
+# Optional: Polling interval in seconds (defaults to 5 when webhooks disabled)
+# Lower = more real-time but more API calls
+# Higher = less API calls but slower updates
+# PERIODIC_BACKFILL_INTERVAL=5
+
+# Optional: Timezone (defaults to Europe/Berlin)
 TIMEZONE=Europe/Berlin
 ```
+
+**Note**: No ngrok token needed for polling-only mode!
 
 **For Airtable Personal Access Token:**
 1. Go to: https://airtable.com/create/tokens
@@ -69,16 +129,9 @@ TIMEZONE=Europe/Berlin
 scripts\run_local.bat
 ```
 
-**That's it!** The system will automatically:
-- ✅ Create Airtable tables with all required fields
-- ✅ Start ngrok tunnel
-- ✅ Configure Teamwork webhooks (4 event types)
-- ✅ Configure Missive webhook
-- ✅ Perform initial backfill
-- ✅ Start processing events
-
 ### What You'll See
 
+**Webhook Mode:**
 ```
 2025-10-15 01:00:00 - INFO - Checking Airtable tables...
 2025-10-15 01:00:01 - INFO - Creating table: Emails
@@ -108,6 +161,32 @@ scripts\run_local.bat
 
 2025-10-15 01:00:14 - INFO - Startup operations completed successfully
 2025-10-15 01:00:14 - INFO - Keep this process running to maintain ngrok tunnel
+```
+
+**Polling-Only Mode:**
+```
+2025-10-15 01:00:00 - INFO - Checking Airtable tables...
+2025-10-15 01:00:01 - INFO - Creating table: Emails
+2025-10-15 01:00:02 - INFO - ✓ Created table 'Emails' with 16 fields
+2025-10-15 01:00:02 - INFO - Creating table: Tasks
+2025-10-15 01:00:03 - INFO - ✓ Created table 'Tasks' with 18 fields
+2025-10-15 01:00:03 - INFO - ✓ Airtable setup complete
+
+2025-10-15 01:00:04 - INFO - Webhooks disabled. Skipping ngrok setup.
+======================================================================
+POLLING MODE ACTIVE
+======================================================================
+Periodic backfill interval: 5 seconds
+No webhooks will be configured. System relies on periodic polling.
+======================================================================
+
+2025-10-15 01:00:05 - INFO - Starting backfill operation...
+2025-10-15 01:00:06 - INFO - Found 5 tasks to backfill
+2025-10-15 01:00:07 - INFO - Found 0 conversations to backfill
+2025-10-15 01:00:07 - INFO - ✓ Backfill completed
+
+2025-10-15 01:00:08 - INFO - Startup operations completed successfully
+2025-10-15 01:00:09 - INFO - Starting periodic backfill (every 5 seconds)...
 ```
 
 ## Automated Setup Features
@@ -372,25 +451,61 @@ PG_DSN=postgresql://youruser:yourpassword@localhost:5432/teamwork_missive
 - Ensure tables were created successfully
 
 ### Events being missed
-- The periodic backfill (every 60s) should catch missed events
-- Check logs for backfill execution
+- **Webhook mode**: The periodic backfill (every 60s) should catch missed events
+- **Polling mode**: The periodic polling (every 5s by default) is the primary mechanism
+- Check logs for backfill/polling execution
 - Verify checkpoint files are updating: `cat data/checkpoints/*.json`
+
+### Choosing Between Webhook and Polling Mode
+
+**Use Webhook Mode if:**
+- You need real-time updates (< 5 second latency)
+- You want to minimize API rate limit usage
+- You can expose a public URL (ngrok for dev, or actual domain for production)
+- You're deploying to production
+
+**Use Polling-Only Mode if:**
+- You're testing or developing
+- You're behind a strict firewall with no inbound access
+- You don't have ngrok or can't set up webhooks
+- You prefer simpler deployment (no tunnel maintenance)
+- 5-60 second update delay is acceptable
+- API rate limits are not a concern
+
+**Switching Between Modes:**
+You can easily switch by changing `.env`:
+```env
+# Switch to polling-only
+DISABLE_WEBHOOKS=true
+
+# Switch back to webhooks
+DISABLE_WEBHOOKS=false
+# or just remove the line (default is false)
+```
 
 ## Advanced Configuration
 
 ### Environment Variables
 
-See `.env.example` for all available options.
-
 **Key settings:**
 - `DB_BACKEND`: `airtable` or `postgres`
 - `LOG_LEVEL`: `DEBUG`, `INFO`, `WARNING`, `ERROR`
+- `DISABLE_WEBHOOKS`: `true` or `false` (default: `false`)
+  - When `true`: No webhooks or ngrok, polling-only mode
+  - When `false`: Webhook mode with periodic backfill as backup
+- `PERIODIC_BACKFILL_INTERVAL`: Polling interval in seconds
+  - Default: `5` when `DISABLE_WEBHOOKS=true`
+  - Default: `60` when `DISABLE_WEBHOOKS=false`
+  - Can be set to any value (e.g., `10`, `30`, `120`)
+  - Lower values = more real-time but more API calls
+  - Higher values = fewer API calls but slower updates
 - `TIMEZONE`: IANA timezone name for timestamps (default: `Europe/Berlin`)
   - Examples: `Europe/Berlin`, `America/New_York`, `Asia/Tokyo`, `UTC`
   - All timestamps in Airtable will be displayed in this timezone
   - Both data storage and Airtable column configuration use this setting
 - `BACKFILL_OVERLAP_SECONDS`: Overlap window (default: 120)
-- `SPOOL_RETRY_SECONDS`: Retry interval (default: 300)
+  - Helps prevent missed events due to clock skew or race conditions
+- `SPOOL_RETRY_SECONDS`: Retry interval for failed events (default: 60)
 
 ### Checkpoint Management
 

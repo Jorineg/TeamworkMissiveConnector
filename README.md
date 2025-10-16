@@ -5,8 +5,9 @@ A reliable Python-based connector system that synchronizes data from Teamwork (t
 ## Features
 
 - **Fully automated setup** - Tables and webhooks created automatically
-- **Webhook-based real-time sync** for Teamwork tasks and Missive emails  
-- **Periodic backfill** (every 60s) ensures no events are missed
+- **Dual operation modes**:
+  - **Webhook mode** (default): Real-time sync with periodic backfill (60s) as backup
+  - **Polling-only mode**: No webhooks, relies on frequent polling (5s default)
 - **Persistent spool queue** ensures no events are lost
 - **Attachment handling** from Missive emails (uploads to Airtable)
 - **Soft deletion** support with `deleted` flag
@@ -25,16 +26,10 @@ pip install -r requirements.txt
 
 ### 2. Configure Environment
 
-```bash
-cp .env.example .env
-# Edit .env with your API keys
-```
+Create a `.env` file with your configuration:
 
-Required settings:
+**For webhook mode (default, real-time sync):**
 ```env
-# ngrok (for local dev)
-NGROK_AUTHTOKEN=your_token_here
-
 # Teamwork
 TEAMWORK_BASE_URL=https://yourcompany.teamwork.com
 TEAMWORK_API_KEY=your_key_here
@@ -46,7 +41,33 @@ MISSIVE_API_TOKEN=your_token_here
 AIRTABLE_API_KEY=your_key_here
 AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
 
-# Timezone (optional, defaults to Europe/Berlin)
+# ngrok (for local dev with webhooks)
+NGROK_AUTHTOKEN=your_token_here
+
+# Optional: Timezone (defaults to Europe/Berlin)
+TIMEZONE=Europe/Berlin
+```
+
+**For polling-only mode (no webhooks, simpler setup):**
+```env
+# Teamwork
+TEAMWORK_BASE_URL=https://yourcompany.teamwork.com
+TEAMWORK_API_KEY=your_key_here
+
+# Missive
+MISSIVE_API_TOKEN=your_token_here
+
+# Airtable
+AIRTABLE_API_KEY=your_key_here
+AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
+
+# Disable webhooks, use polling instead
+DISABLE_WEBHOOKS=true
+
+# Optional: Polling interval in seconds (default: 5 when webhooks disabled)
+PERIODIC_BACKFILL_INTERVAL=5
+
+# Optional: Timezone (defaults to Europe/Berlin)
 TIMEZONE=Europe/Berlin
 ```
 
@@ -112,11 +133,13 @@ On startup, the system automatically:
 - Configures Missive webhooks via API (deletes old, creates new)
 - Stores webhook IDs for cleanup on next run
 
-### Periodic Backfill
-Every 60 seconds, the system:
-- Queries APIs for recently updated items
-- Captures any events that webhooks might have missed
+### Periodic Backfill / Polling
+The system runs periodic polling to query APIs for updates:
+- **Webhook mode**: Every 60 seconds (default) as a safety net for missed webhooks
+- **Polling-only mode**: Every 5 seconds (default) as the primary sync mechanism
+- Queries APIs for recently updated items using checkpoint-based incremental fetching
 - Updates cached mappings for tags and people
+- Configurable via `PERIODIC_BACKFILL_INTERVAL` environment variable
 
 ### ID-to-Name Mapping
 - Fetches all people and tags from Teamwork on startup
