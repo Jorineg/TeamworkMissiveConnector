@@ -32,9 +32,14 @@ class Email:
     thread_id: Optional[str] = None
     subject: Optional[str] = None
     from_address: Optional[str] = None
+    from_name: Optional[str] = None
     to_addresses: List[str] = field(default_factory=list)
+    to_names: List[str] = field(default_factory=list)
     cc_addresses: List[str] = field(default_factory=list)
+    cc_names: List[str] = field(default_factory=list)
     bcc_addresses: List[str] = field(default_factory=list)
+    bcc_names: List[str] = field(default_factory=list)
+    in_reply_to: List[str] = field(default_factory=list)
     body_text: Optional[str] = None
     body_html: Optional[str] = None
     sent_at: Optional[datetime] = None
@@ -51,9 +56,14 @@ class Email:
             "thread_id": self.thread_id,
             "subject": self.subject,
             "from_address": self.from_address,
+            "from_name": self.from_name,
             "to_addresses": self.to_addresses,
+            "to_names": self.to_names,
             "cc_addresses": self.cc_addresses,
+            "cc_names": self.cc_names,
             "bcc_addresses": self.bcc_addresses,
+            "bcc_names": self.bcc_names,
+            "in_reply_to": self.in_reply_to,
             "body_text": self.body_text,
             "body_html": self.body_html,
             "sent_at": self.sent_at.isoformat() if self.sent_at else None,

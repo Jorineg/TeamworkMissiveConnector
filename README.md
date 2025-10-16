@@ -45,6 +45,9 @@ MISSIVE_API_TOKEN=your_token_here
 # Airtable
 AIRTABLE_API_KEY=your_key_here
 AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
+
+# Timezone (optional, defaults to Europe/Berlin)
+TIMEZONE=Europe/Berlin
 ```
 
 ### 3. Run

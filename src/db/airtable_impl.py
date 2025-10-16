@@ -2,6 +2,7 @@
 import json
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
+from zoneinfo import ZoneInfo
 from pyairtable import Api
 
 from src import settings
@@ -31,9 +32,14 @@ class AirtableDatabase(DatabaseInterface):
                 "Email ID": email.email_id,
                 "Subject": email.subject or "",
                 "From": email.from_address or "",
+                "From Name": email.from_name or "",
                 "To": ", ".join(email.to_addresses) if email.to_addresses else "",
+                "To Names": ", ".join(email.to_names) if email.to_names else "",
                 "Cc": ", ".join(email.cc_addresses) if email.cc_addresses else "",
+                "Cc Names": ", ".join(email.cc_names) if email.cc_names else "",
                 "Bcc": ", ".join(email.bcc_addresses) if email.bcc_addresses else "",
+                "Bcc Names": ", ".join(email.bcc_names) if email.bcc_names else "",
+                "In Reply To": ", ".join(email.in_reply_to) if email.in_reply_to else "",
                 "Body Text": email.body_text or "",
                 "Body HTML": email.body_html or "",
                 "Deleted": email.deleted,
@@ -44,11 +50,11 @@ class AirtableDatabase(DatabaseInterface):
             if email.thread_id:
                 fields["Thread ID"] = email.thread_id
             if email.sent_at:
-                fields["Sent At"] = self._to_utc_z(email.sent_at)
+                fields["Sent At"] = self._to_localized_z(email.sent_at)
             if email.received_at:
-                fields["Received At"] = self._to_utc_z(email.received_at)
+                fields["Received At"] = self._to_localized_z(email.received_at)
             if email.deleted_at:
-                fields["Deleted At"] = self._to_utc_z(email.deleted_at)
+                fields["Deleted At"] = self._to_localized_z(email.deleted_at)
             if email.labels:
                 # Store as plain text to avoid schema option management
                 fields["Labels Text"] = ", ".join(email.labels)
@@ -97,7 +103,7 @@ class AirtableDatabase(DatabaseInterface):
                     return
                 try:
                     dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-                    fields[key] = self._to_utc_z(dt)
+                    fields[key] = self._to_localized_z(dt)
                 except Exception:
                     fields[key] = value
 
@@ -186,7 +192,7 @@ class AirtableDatabase(DatabaseInterface):
             if record_id:
                 self.emails_table.update(record_id, {
                     "Deleted": True,
-                    "Deleted At": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                    "Deleted At": self._to_localized_z(datetime.now(timezone.utc))
                 })
                 logger.info(f"Marked email {email_id} as deleted")
         except Exception as e:
@@ -199,7 +205,7 @@ class AirtableDatabase(DatabaseInterface):
             record_id = self._find_task_record(task_id)
             if record_id:
                 self.tasks_table.update(record_id, {
-                    "deletedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                    "deletedAt": self._to_localized_z(datetime.now(timezone.utc))
                 })
                 logger.info(f"Marked task {task_id} as deleted")
         except Exception as e:
@@ -278,11 +284,24 @@ class AirtableDatabase(DatabaseInterface):
         
         return None
 
-    def _to_utc_z(self, dt: datetime) -> str:
-        """Format datetime as UTC ISO string with 'Z' suffix."""
+    def _to_localized_z(self, dt: datetime) -> str:
+        """Format datetime as localized ISO string for configured timezone."""
+        try:
+            tz = ZoneInfo(settings.TIMEZONE)
+        except Exception as e:
+            logger.warning(f"Invalid timezone '{settings.TIMEZONE}', falling back to UTC: {e}")
+            tz = timezone.utc
+        
         if dt.tzinfo is None:
+            # Assume UTC if naive
             dt = dt.replace(tzinfo=timezone.utc)
-        else:
-            dt = dt.astimezone(timezone.utc)
-        return dt.isoformat().replace("+00:00", "Z")
+        
+        # Convert to configured timezone
+        dt = dt.astimezone(tz)
+        # Return ISO format - Airtable will display according to column's timezone setting
+        iso_string = dt.isoformat()
+        # Replace timezone offset with 'Z' if UTC, otherwise keep the offset
+        if iso_string.endswith("+00:00"):
+            return iso_string.replace("+00:00", "Z")
+        return iso_string
 

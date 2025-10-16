@@ -105,19 +105,26 @@ class MissiveEventHandler:
             except (ValueError, AttributeError, OSError):
                 pass
         
-        # Parse from address
+        # Parse from address and name
         from_address = None
+        from_name = None
         from_field = data.get("from_field", data.get("from"))
         if from_field:
             if isinstance(from_field, dict):
                 from_address = from_field.get("address") or from_field.get("email")
+                from_name = from_field.get("name")
             elif isinstance(from_field, str):
                 from_address = from_field
         
-        # Parse to addresses
-        to_addresses = self._parse_email_addresses(data.get("to_fields", data.get("to", [])))
-        cc_addresses = self._parse_email_addresses(data.get("cc_fields", data.get("cc", [])))
-        bcc_addresses = self._parse_email_addresses(data.get("bcc_fields", data.get("bcc", [])))
+        # Parse to addresses and names
+        to_addresses, to_names = self._parse_email_fields(data.get("to_fields", data.get("to", [])))
+        cc_addresses, cc_names = self._parse_email_fields(data.get("cc_fields", data.get("cc", [])))
+        bcc_addresses, bcc_names = self._parse_email_fields(data.get("bcc_fields", data.get("bcc", [])))
+        
+        # Parse in_reply_to
+        in_reply_to = data.get("in_reply_to", [])
+        if not isinstance(in_reply_to, list):
+            in_reply_to = [in_reply_to] if in_reply_to else []
         
         # Parse body
         # Missive API returns HTML in the "body" field, not in "body_html"
@@ -156,9 +163,14 @@ class MissiveEventHandler:
             thread_id=conversation_id,
             subject=data.get("subject"),
             from_address=from_address,
+            from_name=from_name,
             to_addresses=to_addresses,
+            to_names=to_names,
             cc_addresses=cc_addresses,
+            cc_names=cc_names,
             bcc_addresses=bcc_addresses,
+            bcc_names=bcc_names,
+            in_reply_to=in_reply_to,
             body_text=body_text,
             body_html=body_html,
             sent_at=sent_at,
@@ -171,25 +183,38 @@ class MissiveEventHandler:
         )
     
     def _parse_email_addresses(self, addresses: Any) -> List[str]:
-        """Parse email addresses from various formats."""
+        """Parse email addresses from various formats (legacy method)."""
+        result, _ = self._parse_email_fields(addresses)
+        return result
+    
+    def _parse_email_fields(self, addresses: Any) -> tuple[List[str], List[str]]:
+        """Parse email addresses and names from various formats.
+        
+        Returns:
+            Tuple of (addresses, names) lists
+        """
         if not addresses:
-            return []
+            return [], []
         
         if isinstance(addresses, str):
-            return [addresses]
+            return [addresses], []
         
         if isinstance(addresses, list):
-            result = []
+            result_addresses = []
+            result_names = []
             for addr in addresses:
                 if isinstance(addr, dict):
                     email = addr.get("address") or addr.get("email")
+                    name = addr.get("name")
                     if email:
-                        result.append(email)
+                        result_addresses.append(email)
+                        result_names.append(name or "")
                 elif isinstance(addr, str):
-                    result.append(addr)
-            return result
+                    result_addresses.append(addr)
+                    result_names.append("")
+            return result_addresses, result_names
         
-        return []
+        return [], []
     
     def _html_to_text(self, html: str) -> str:
         """Convert HTML to plain text."""

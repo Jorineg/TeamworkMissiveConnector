@@ -6,6 +6,15 @@ from src import settings
 from src.logging_conf import logger
 
 
+def _get_datetime_field_options() -> Dict[str, Any]:
+    """Get the standard datetime field options with the configured timezone."""
+    return {
+        "timeZone": settings.TIMEZONE,
+        "dateFormat": {"name": "iso"},
+        "timeFormat": {"name": "24hour"}
+    }
+
+
 class AirtableSetup:
     """Helper for setting up and validating Airtable tables."""
 
@@ -69,16 +78,21 @@ class AirtableSetup:
                 {"name": "Thread ID", "type": "singleLineText"},
                 {"name": "Subject", "type": "singleLineText"},
                 {"name": "From", "type": "singleLineText"},
+                {"name": "From Name", "type": "singleLineText"},
                 {"name": "To", "type": "multilineText"},
+                {"name": "To Names", "type": "multilineText"},
                 {"name": "Cc", "type": "multilineText"},
+                {"name": "Cc Names", "type": "multilineText"},
                 {"name": "Bcc", "type": "multilineText"},
+                {"name": "Bcc Names", "type": "multilineText"},
+                {"name": "In Reply To", "type": "multilineText"},
                 {"name": "Body Text", "type": "multilineText"},
                 {"name": "Body HTML", "type": "multilineText"},
-                {"name": "Sent At", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
-                {"name": "Received At", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+                {"name": "Sent At", "type": "dateTime", "options": _get_datetime_field_options()},
+                {"name": "Received At", "type": "dateTime", "options": _get_datetime_field_options()},
                 {"name": "Labels Text", "type": "multilineText"},
                 {"name": "Deleted", "type": "checkbox", "options": {"color": "greenBright", "icon": "check"}},
-                {"name": "Deleted At", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+                {"name": "Deleted At", "type": "dateTime", "options": _get_datetime_field_options()},
                 {"name": "Source Links", "type": "multilineText"},
                 {"name": "Attachments", "type": "multipleAttachments"}
             ]
@@ -119,20 +133,20 @@ class AirtableSetup:
                 {"name": "attachments", "type": "multilineText"},
                 {"name": "tasklistId", "type": "singleLineText"},
                 {"name": "parentTask", "type": "singleLineText"},
-                {"name": "startDate", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
-                {"name": "dueDate", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
-                {"name": "updatedAt", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+                {"name": "startDate", "type": "dateTime", "options": _get_datetime_field_options()},
+                {"name": "dueDate", "type": "dateTime", "options": _get_datetime_field_options()},
+                {"name": "updatedAt", "type": "dateTime", "options": _get_datetime_field_options()},
                 # UpdatedBy - both ID and name
                 {"name": "updatedById", "type": "singleLineText"},
                 {"name": "updatedBy", "type": "singleLineText"},
-                {"name": "createdAt", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+                {"name": "createdAt", "type": "dateTime", "options": _get_datetime_field_options()},
                 # CreatedBy - both ID and name
                 {"name": "createdById", "type": "singleLineText"},
                 {"name": "createdBy", "type": "singleLineText"},
-                {"name": "dateUpdated", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}},
+                {"name": "dateUpdated", "type": "dateTime", "options": _get_datetime_field_options()},
                 {"name": "estimateMinutes", "type": "number", "options": {"precision": 0}},
                 {"name": "accumulatedEstimatedMinutes", "type": "number", "options": {"precision": 0}},
-                {"name": "deletedAt", "type": "dateTime", "options": {"timeZone": "utc", "dateFormat": {"name": "iso"}, "timeFormat": {"name": "24hour"}}}
+                {"name": "deletedAt", "type": "dateTime", "options": _get_datetime_field_options()}
             ]
         }
 

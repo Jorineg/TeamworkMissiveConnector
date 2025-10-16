@@ -46,6 +46,10 @@ MISSIVE_API_TOKEN=your_token_here
 # Airtable (get from: https://airtable.com/create/tokens)
 AIRTABLE_API_KEY=your_key_here
 AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
+
+# Timezone (optional, defaults to Europe/Berlin)
+# All timestamps in Airtable will be displayed in this timezone
+TIMEZONE=Europe/Berlin
 ```
 
 **For Airtable Personal Access Token:**
@@ -381,6 +385,10 @@ See `.env.example` for all available options.
 **Key settings:**
 - `DB_BACKEND`: `airtable` or `postgres`
 - `LOG_LEVEL`: `DEBUG`, `INFO`, `WARNING`, `ERROR`
+- `TIMEZONE`: IANA timezone name for timestamps (default: `Europe/Berlin`)
+  - Examples: `Europe/Berlin`, `America/New_York`, `Asia/Tokyo`, `UTC`
+  - All timestamps in Airtable will be displayed in this timezone
+  - Both data storage and Airtable column configuration use this setting
 - `BACKFILL_OVERLAP_SECONDS`: Overlap window (default: 120)
 - `SPOOL_RETRY_SECONDS`: Retry interval (default: 300)
 

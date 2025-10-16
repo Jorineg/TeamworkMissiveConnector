@@ -43,6 +43,9 @@ AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_EMAILS_TABLE = os.getenv("AIRTABLE_EMAILS_TABLE", "Emails")
 AIRTABLE_TASKS_TABLE = os.getenv("AIRTABLE_TASKS_TABLE", "Tasks")
 
+# Timezone settings
+TIMEZONE = os.getenv("TIMEZONE", "Europe/Berlin")
+
 # PostgreSQL settings
 PG_DSN = os.getenv("PG_DSN")
 
