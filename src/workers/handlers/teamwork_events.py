@@ -1,6 +1,6 @@
 """Teamwork event handler."""
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from src.db.models import Task
 from src.db.interface import DatabaseInterface
@@ -16,26 +16,29 @@ class TeamworkEventHandler:
         self.db = db
         self.client = TeamworkClient()
     
-    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+    def process_event(self, event_type: str, payload: Dict[str, Any]) -> Optional[Task]:
         """
-        Handle a Teamwork event.
+        Process a Teamwork event and return a Task object.
         
         Args:
             event_type: Type of event (e.g., "task.created", "task.updated")
             payload: Event payload
+        
+        Returns:
+            Task object to be batch upserted, or None
         """
-        logger.info(f"Handling Teamwork event: {event_type}")
+        logger.info(f"Processing Teamwork event: {event_type}")
         
         # Extract task ID from payload
         task_id = self._extract_task_id(payload)
         if not task_id:
             logger.warning(f"No task ID found in payload for event {event_type}")
-            return
+            return None
         
         # Handle deletion events
         if "deleted" in event_type.lower() or payload.get("deleted"):
             self.db.mark_task_deleted(task_id)
-            return
+            return None
         
         # Fetch full task data from API
         task_data = self.client.get_task_by_id(task_id)
@@ -46,9 +49,19 @@ class TeamworkEventHandler:
         
         # Convert to Task model
         task = self._parse_task(task_data)
+        return task
+    
+    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        """
+        Handle a Teamwork event (legacy method for backwards compatibility).
         
-        # Store in database
-        self.db.upsert_task(task)
+        Args:
+            event_type: Type of event (e.g., "task.created", "task.updated")
+            payload: Event payload
+        """
+        task = self.process_event(event_type, payload)
+        if task:
+            self.db.upsert_task(task)
     
     def _extract_task_id(self, payload: Dict[str, Any]) -> str:
         """Extract task ID from various payload formats."""

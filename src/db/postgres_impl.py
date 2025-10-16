@@ -1,9 +1,9 @@
 """PostgreSQL implementation of the database interface."""
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 import psycopg2
-from psycopg2.extras import RealDictCursor, Json
+from psycopg2.extras import RealDictCursor, Json, execute_batch
 
 from src import settings
 from src.db.interface import DatabaseInterface
@@ -104,9 +104,52 @@ class PostgresDatabase(DatabaseInterface):
     
     def upsert_email(self, email: Email) -> None:
         """Insert or update an email record."""
+        self.upsert_emails_batch([email])
+
+    def upsert_emails_batch(self, emails: List[Email]) -> None:
+        """Insert or update multiple email records in a batch."""
+        if not emails:
+            return
+        
         try:
             with self.conn.cursor() as cur:
-                cur.execute("""
+                # Prepare data for batch insert
+                email_data = []
+                attachment_data = []
+                
+                for email in emails:
+                    email_data.append((
+                        email.email_id,
+                        email.thread_id,
+                        email.subject,
+                        email.from_address,
+                        email.to_addresses,
+                        email.cc_addresses,
+                        email.bcc_addresses,
+                        email.body_text,
+                        email.body_html,
+                        email.sent_at,
+                        email.received_at,
+                        email.labels,
+                        email.deleted,
+                        email.deleted_at,
+                        Json(email.source_links)
+                    ))
+                    
+                    # Collect attachments
+                    if email.attachments:
+                        for att in email.attachments:
+                            attachment_data.append((
+                                email.email_id,
+                                att.filename,
+                                att.content_type,
+                                att.byte_size,
+                                att.source_url,
+                                att.checksum
+                            ))
+                
+                # Batch upsert emails
+                execute_batch(cur, """
                     INSERT INTO emails (
                         email_id, thread_id, subject, from_address,
                         to_addresses, cc_addresses, bcc_addresses,
@@ -131,57 +174,61 @@ class PostgresDatabase(DatabaseInterface):
                         deleted_at = EXCLUDED.deleted_at,
                         source_links = EXCLUDED.source_links,
                         updated_at = NOW()
-                """, (
-                    email.email_id,
-                    email.thread_id,
-                    email.subject,
-                    email.from_address,
-                    email.to_addresses,
-                    email.cc_addresses,
-                    email.bcc_addresses,
-                    email.body_text,
-                    email.body_html,
-                    email.sent_at,
-                    email.received_at,
-                    email.labels,
-                    email.deleted,
-                    email.deleted_at,
-                    Json(email.source_links)
-                ))
+                """, email_data)
                 
-                # Handle attachments
-                if email.attachments:
-                    # Delete existing attachments
-                    cur.execute("DELETE FROM attachments WHERE email_id = %s", (email.email_id,))
+                # Delete existing attachments for all emails in batch
+                if attachment_data:
+                    email_ids = tuple(email.email_id for email in emails if email.attachments)
+                    if email_ids:
+                        cur.execute("DELETE FROM attachments WHERE email_id = ANY(%s)", (list(email_ids),))
                     
-                    # Insert new attachments
-                    for att in email.attachments:
-                        cur.execute("""
-                            INSERT INTO attachments (
-                                email_id, filename, content_type, byte_size, source_url, checksum
-                            ) VALUES (%s, %s, %s, %s, %s, %s)
-                        """, (
-                            email.email_id,
-                            att.filename,
-                            att.content_type,
-                            att.byte_size,
-                            att.source_url,
-                            att.checksum
-                        ))
+                    # Batch insert attachments
+                    execute_batch(cur, """
+                        INSERT INTO attachments (
+                            email_id, filename, content_type, byte_size, source_url, checksum
+                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                    """, attachment_data)
                 
                 self.conn.commit()
-                logger.info(f"Upserted email {email.email_id} in PostgreSQL")
+                logger.info(f"Batch upserted {len(emails)} emails in PostgreSQL")
         
         except Exception as e:
             self.conn.rollback()
-            logger.error(f"Failed to upsert email {email.email_id}: {e}", exc_info=True)
+            logger.error(f"Failed to batch upsert emails: {e}", exc_info=True)
             raise
     
     def upsert_task(self, task: Task) -> None:
         """Insert or update a task record."""
+        self.upsert_tasks_batch([task])
+
+    def upsert_tasks_batch(self, tasks: List[Task]) -> None:
+        """Insert or update multiple task records in a batch."""
+        if not tasks:
+            return
+        
         try:
             with self.conn.cursor() as cur:
-                cur.execute("""
+                # Prepare data for batch insert
+                task_data = [
+                    (
+                        task.task_id,
+                        task.project_id,
+                        task.title,
+                        task.description,
+                        task.status,
+                        task.tags,
+                        task.assignees,
+                        task.due_at,
+                        task.updated_at,
+                        task.deleted,
+                        task.deleted_at,
+                        Json(task.source_links)
+                    )
+                    for task in tasks
+                ]
+                
+                # Batch upsert tasks
+                execute_batch(cur, """
                     INSERT INTO tasks (
                         task_id, project_id, title, description, status,
                         tags, assignees, due_at, updated_at,
@@ -201,27 +248,14 @@ class PostgresDatabase(DatabaseInterface):
                         deleted = EXCLUDED.deleted,
                         deleted_at = EXCLUDED.deleted_at,
                         source_links = EXCLUDED.source_links
-                """, (
-                    task.task_id,
-                    task.project_id,
-                    task.title,
-                    task.description,
-                    task.status,
-                    task.tags,
-                    task.assignees,
-                    task.due_at,
-                    task.updated_at,
-                    task.deleted,
-                    task.deleted_at,
-                    Json(task.source_links)
-                ))
+                """, task_data)
                 
                 self.conn.commit()
-                logger.info(f"Upserted task {task.task_id} in PostgreSQL")
+                logger.info(f"Batch upserted {len(tasks)} tasks in PostgreSQL")
         
         except Exception as e:
             self.conn.rollback()
-            logger.error(f"Failed to upsert task {task.task_id}: {e}", exc_info=True)
+            logger.error(f"Failed to batch upsert tasks: {e}", exc_info=True)
             raise
     
     def mark_email_deleted(self, email_id: str) -> None:

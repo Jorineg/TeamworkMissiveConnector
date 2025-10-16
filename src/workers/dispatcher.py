@@ -51,27 +51,27 @@ class WorkerDispatcher:
         
         while self.running:
             try:
-                # Get next item from queue
-                item = self.queue.dequeue()
+                # Get up to 10 items from queue
+                items = self.queue.dequeue_batch(max_items=10)
                 
-                if item is None:
+                if not items:
                     # Queue is empty, sleep and check again
                     time.sleep(1)
                     continue
                 
-                # Process the item
+                # Process the batch
                 try:
-                    self._process_item(item)
-                    self.queue.mark_processed()
+                    self._process_batch(items)
+                    self.queue.mark_batch_processed()
                     logger.info(
-                        f"Successfully processed {item.source} event: {item.event_type}",
-                        extra={"source": item.source, "event_id": item.external_id}
+                        f"Successfully processed batch of {len(items)} events"
                     )
                 
                 except Exception as e:
-                    error_msg = f"Error processing item: {e}"
+                    error_msg = f"Error processing batch: {e}"
                     logger.error(error_msg, exc_info=True)
-                    self.queue.mark_failed(item, error_msg)
+                    # Mark all items as failed for retry
+                    self.queue.mark_batch_failed(items, error_msg)
             
             except Exception as e:
                 logger.error(f"Unexpected error in worker loop: {e}", exc_info=True)
@@ -81,9 +81,61 @@ class WorkerDispatcher:
         logger.info("Worker dispatcher shutting down")
         self.db.close()
     
+    def _process_batch(self, items: list) -> None:
+        """
+        Process a batch of queue items.
+        
+        Args:
+            items: List of QueueItems to process
+        """
+        from src.db.models import Email, Task
+        
+        # Separate items by source
+        teamwork_items = [item for item in items if item.source == "teamwork"]
+        missive_items = [item for item in items if item.source == "missive"]
+        
+        # Process Teamwork items
+        if teamwork_items:
+            tasks = []
+            for item in teamwork_items:
+                try:
+                    payload = dict(item.payload or {})
+                    payload.setdefault("id", item.external_id)
+                    
+                    # Collect tasks from handler
+                    task = self.teamwork_handler.process_event(item.event_type, payload)
+                    if task:
+                        tasks.append(task)
+                except Exception as e:
+                    logger.error(f"Error processing teamwork item {item.external_id}: {e}", exc_info=True)
+            
+            # Batch upsert tasks
+            if tasks:
+                self.db.upsert_tasks_batch(tasks)
+        
+        # Process Missive items
+        if missive_items:
+            emails = []
+            for item in missive_items:
+                try:
+                    payload = dict(item.payload or {})
+                    payload.setdefault("conversation_id", item.external_id)
+                    payload.setdefault("id", item.external_id)
+                    
+                    # Collect emails from handler
+                    item_emails = self.missive_handler.process_event(item.event_type, payload)
+                    if item_emails:
+                        emails.extend(item_emails)
+                except Exception as e:
+                    logger.error(f"Error processing missive item {item.external_id}: {e}", exc_info=True)
+            
+            # Batch upsert emails
+            if emails:
+                self.db.upsert_emails_batch(emails)
+    
     def _process_item(self, item: QueueItem) -> None:
         """
-        Process a single queue item.
+        Process a single queue item (legacy method, kept for compatibility).
         
         Args:
             item: Queue item to process

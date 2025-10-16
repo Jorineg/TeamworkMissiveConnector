@@ -1,6 +1,6 @@
 """Missive event handler."""
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import re
 from html import unescape
 
@@ -17,21 +17,24 @@ class MissiveEventHandler:
         self.db = db
         self.client = MissiveClient()
     
-    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+    def process_event(self, event_type: str, payload: Dict[str, Any]) -> Optional[List[Email]]:
         """
-        Handle a Missive event.
+        Process a Missive event and return Email objects.
         
         Args:
             event_type: Type of event (e.g., "conversation.created", "message.received")
             payload: Event payload
+        
+        Returns:
+            List of Email objects to be batch upserted, or None
         """
-        logger.info(f"Handling Missive event: {event_type}")
+        logger.info(f"Processing Missive event: {event_type}")
         
         # Extract conversation/message data
         conversation_id = self._extract_conversation_id(payload)
         if not conversation_id:
             logger.warning(f"No conversation ID found in payload for event {event_type}")
-            return
+            return None
         
         # Handle deletion/trash events: fetch messages first, then mark deleted
         if "deleted" in event_type.lower() or "trashed" in event_type.lower():
@@ -40,11 +43,12 @@ class MissiveEventHandler:
                 msg_id = str(msg.get("id", ""))
                 if msg_id:
                     self.db.mark_email_deleted(msg_id)
-            return
+            return None
         
         # Always fetch fresh messages from API to ensure consistency
         messages = self.client.get_conversation_messages(conversation_id)
         
+        emails = []
         # Process each message
         for message_data in messages:
             try:
@@ -57,9 +61,24 @@ class MissiveEventHandler:
                         message_data = full_message
                 
                 email = self._parse_message(message_data, conversation_id)
-                self.db.upsert_email(email)
+                emails.append(email)
             except Exception as e:
                 logger.error(f"Error processing message: {e}", exc_info=True)
+        
+        return emails if emails else None
+    
+    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        """
+        Handle a Missive event (legacy method for backwards compatibility).
+        
+        Args:
+            event_type: Type of event (e.g., "conversation.created", "message.received")
+            payload: Event payload
+        """
+        emails = self.process_event(event_type, payload)
+        if emails:
+            for email in emails:
+                self.db.upsert_email(email)
     
     def _extract_conversation_id(self, payload: Dict[str, Any]) -> str:
         """Extract conversation ID from payload."""

@@ -31,6 +31,10 @@ class SpoolQueue:
         # Track the currently dequeued file for ack/fail operations
         self._current_file: Optional[Path] = None
         self._current_item: Optional[QueueItem] = None
+        
+        # Track batch operations
+        self._current_batch_files: List[Path] = []
+        self._current_batch_items: List[QueueItem] = []
 
     def enqueue(self, item: QueueItem) -> None:
         """Enqueue an item by creating a file named with its external ID."""
@@ -64,30 +68,60 @@ class SpoolQueue:
 
     def dequeue(self) -> Optional[QueueItem]:
         """Return the next item by scanning for `.evt` or eligible `.retry` files."""
+        batch = self.dequeue_batch(max_items=1)
+        return batch[0] if batch else None
+
+    def dequeue_batch(self, max_items: int = 10) -> List[QueueItem]:
+        """Return up to max_items from the queue.
+        
+        Args:
+            max_items: Maximum number of items to dequeue (default 10)
+            
+        Returns:
+            List of QueueItems (may be empty if queue is empty)
+        """
         try:
+            items = []
+            claimed_files = []
+            
             # Process ready `.evt` first, then eligible `.retry`
             for source in ("teamwork", "missive"):
+                if len(items) >= max_items:
+                    break
+                    
                 dir_path = self._dir_for_source(source)
                 if dir_path is None:
                     continue
 
                 # Ready files
                 evt_files = self._list_files(dir_path, ".evt")
-                if evt_files:
-                    file_path = evt_files[0]
-                    return self._claim_file(source, file_path)
+                for file_path in evt_files:
+                    if len(items) >= max_items:
+                        break
+                    item = self._claim_file(source, file_path)
+                    items.append(item)
+                    claimed_files.append(file_path)
 
                 # Retry files eligible by age
-                retry_files = self._list_files(dir_path, ".retry")
-                eligible = [p for p in retry_files if self._is_retry_eligible(p)]
-                if eligible:
-                    file_path = eligible[0]
-                    return self._claim_file(source, file_path)
+                if len(items) < max_items:
+                    retry_files = self._list_files(dir_path, ".retry")
+                    eligible = [p for p in retry_files if self._is_retry_eligible(p)]
+                    for file_path in eligible:
+                        if len(items) >= max_items:
+                            break
+                        item = self._claim_file(source, file_path)
+                        items.append(item)
+                        claimed_files.append(file_path)
 
-            return None
+            # Store claimed files for batch operations
+            if items:
+                self._current_batch_files = claimed_files
+                self._current_batch_items = items
+            
+            return items
         except Exception as e:
-            logger.error(f"Failed to dequeue from spool: {e}", exc_info=True)
-            return None
+            logger.error(f"Failed to dequeue batch from spool: {e}", exc_info=True)
+            return []
 
     def mark_processed(self) -> None:
         """Acknowledge current item by deleting its file."""
@@ -100,6 +134,18 @@ class SpoolQueue:
         finally:
             self._current_file = None
             self._current_item = None
+
+    def mark_batch_processed(self) -> None:
+        """Acknowledge all items in current batch by deleting their files."""
+        if not self._current_batch_files:
+            return
+        for file_path in self._current_batch_files:
+            try:
+                file_path.unlink(missing_ok=True)
+            except Exception as e:
+                logger.error(f"Failed to delete spool file {file_path}: {e}")
+        self._current_batch_files = []
+        self._current_batch_items = []
 
     def mark_failed(self, item: QueueItem, error: str) -> None:
         """Rename current file to `.retry` and update its mtime to now."""
@@ -133,6 +179,46 @@ class SpoolQueue:
         finally:
             self._current_file = None
             self._current_item = None
+
+    def mark_batch_failed(self, failed_items: List[QueueItem], error: str) -> None:
+        """Rename files for failed items to `.retry` and update their mtime to now."""
+        if not self._current_batch_files or not failed_items:
+            return
+        
+        failed_ids = {item.external_id for item in failed_items}
+        
+        for i, file_path in enumerate(self._current_batch_files):
+            if i < len(self._current_batch_items):
+                item = self._current_batch_items[i]
+                if item.external_id in failed_ids:
+                    try:
+                        retry_path = file_path.with_suffix(".retry")
+                        # Rename to .retry (idempotent if already .retry)
+                        if file_path.suffix != ".retry":
+                            try:
+                                os.replace(file_path, retry_path)
+                            except FileNotFoundError:
+                                # Already processed elsewhere
+                                pass
+                        else:
+                            retry_path = file_path
+
+                        # Touch to set mtime to now so it waits retry_seconds
+                        try:
+                            now = time.time()
+                            os.utime(retry_path, (now, now))
+                        except Exception:
+                            pass
+
+                        logger.info(
+                            f"Spool mark_failed (batch); will retry in ~{self.retry_seconds}s: {item.external_id}",
+                            extra={"source": item.source, "event_id": item.external_id}
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to mark spool item failed: {e}", exc_info=True)
+        
+        self._current_batch_files = []
+        self._current_batch_items = []
 
     def size(self) -> int:
         """Approximate number of queued files (evt + retry)."""

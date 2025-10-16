@@ -1,7 +1,7 @@
 """Airtable implementation of the database interface."""
 import json
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from zoneinfo import ZoneInfo
 from pyairtable import Api
 
@@ -26,163 +26,192 @@ class AirtableDatabase(DatabaseInterface):
     
     def upsert_email(self, email: Email) -> None:
         """Insert or update an email record."""
+        self.upsert_emails_batch([email])
+
+    def upsert_emails_batch(self, emails: List[Email]) -> None:
+        """Insert or update multiple email records in a batch using Airtable's upsert API."""
+        if not emails:
+            return
+        
         try:
-            # Build Airtable fields
-            fields = {
-                "Email ID": email.email_id,
-                "Subject": email.subject or "",
-                "From": email.from_address or "",
-                "From Name": email.from_name or "",
-                "To": ", ".join(email.to_addresses) if email.to_addresses else "",
-                "To Names": ", ".join(email.to_names) if email.to_names else "",
-                "Cc": ", ".join(email.cc_addresses) if email.cc_addresses else "",
-                "Cc Names": ", ".join(email.cc_names) if email.cc_names else "",
-                "Bcc": ", ".join(email.bcc_addresses) if email.bcc_addresses else "",
-                "Bcc Names": ", ".join(email.bcc_names) if email.bcc_names else "",
-                "In Reply To": ", ".join(email.in_reply_to) if email.in_reply_to else "",
-                "Body Text": email.body_text or "",
-                "Body HTML": email.body_html or "",
-                "Deleted": email.deleted,
-                "Source Links": json.dumps(email.source_links)
-            }
+            records = []
+            for email in emails:
+                # Build Airtable fields
+                fields = {
+                    "Email ID": email.email_id,
+                    "Subject": email.subject or "",
+                    "From": email.from_address or "",
+                    "From Name": email.from_name or "",
+                    "To": ", ".join(email.to_addresses) if email.to_addresses else "",
+                    "To Names": ", ".join(email.to_names) if email.to_names else "",
+                    "Cc": ", ".join(email.cc_addresses) if email.cc_addresses else "",
+                    "Cc Names": ", ".join(email.cc_names) if email.cc_names else "",
+                    "Bcc": ", ".join(email.bcc_addresses) if email.bcc_addresses else "",
+                    "Bcc Names": ", ".join(email.bcc_names) if email.bcc_names else "",
+                    "In Reply To": ", ".join(email.in_reply_to) if email.in_reply_to else "",
+                    "Body Text": email.body_text or "",
+                    "Body HTML": email.body_html or "",
+                    "Deleted": email.deleted,
+                    "Source Links": json.dumps(email.source_links)
+                }
+                
+                # Add optional fields
+                if email.thread_id:
+                    fields["Thread ID"] = email.thread_id
+                if email.sent_at:
+                    fields["Sent At"] = self._to_localized_z(email.sent_at)
+                if email.received_at:
+                    fields["Received At"] = self._to_localized_z(email.received_at)
+                if email.deleted_at:
+                    fields["Deleted At"] = self._to_localized_z(email.deleted_at)
+                if email.labels:
+                    # Store as plain text to avoid schema option management
+                    fields["Labels Text"] = ", ".join(email.labels)
+                
+                # Handle attachments - Airtable expects list of dicts with 'url' keys
+                if email.attachments:
+                    attachment_data = []
+                    for att in email.attachments:
+                        att_dict = {"url": att.source_url}
+                        if att.filename:
+                            att_dict["filename"] = att.filename
+                        attachment_data.append(att_dict)
+                    fields["Attachments"] = attachment_data
+                
+                records.append({"fields": fields})
             
-            # Add optional fields
-            if email.thread_id:
-                fields["Thread ID"] = email.thread_id
-            if email.sent_at:
-                fields["Sent At"] = self._to_localized_z(email.sent_at)
-            if email.received_at:
-                fields["Received At"] = self._to_localized_z(email.received_at)
-            if email.deleted_at:
-                fields["Deleted At"] = self._to_localized_z(email.deleted_at)
-            if email.labels:
-                # Store as plain text to avoid schema option management
-                fields["Labels Text"] = ", ".join(email.labels)
+            # Use Airtable's batch upsert API
+            # performUpsert with fieldsToMergeOn uses "Email ID" as the external ID
+            response = self.emails_table.batch_upsert(
+                records,
+                key_fields=["Email ID"],
+                replace=False  # PATCH behavior, not PUT
+            )
             
-            # Handle attachments - Airtable expects list of dicts with 'url' keys
-            if email.attachments:
-                attachment_data = []
-                for att in email.attachments:
-                    att_dict = {"url": att.source_url}
-                    if att.filename:
-                        att_dict["filename"] = att.filename
-                    attachment_data.append(att_dict)
-                fields["Attachments"] = attachment_data
+            # Update cache with created/updated records
+            if response and "records" in response:
+                for record in response["records"]:
+                    email_id = record.get("fields", {}).get("Email ID")
+                    if email_id:
+                        self._email_cache[email_id] = record["id"]
             
-            # Check if record exists
-            existing_record_id = self._find_email_record(email.email_id)
-            
-            if existing_record_id:
-                # Update existing record
-                self.emails_table.update(existing_record_id, fields)
-                logger.info(f"Updated email {email.email_id} in Airtable")
-            else:
-                # Create new record
-                record = self.emails_table.create(fields)
-                self._email_cache[email.email_id] = record["id"]
-                logger.info(f"Created email {email.email_id} in Airtable")
+            logger.info(f"Batch upserted {len(emails)} emails to Airtable")
         
         except Exception as e:
-            logger.error(f"Failed to upsert email {email.email_id}: {e}", exc_info=True)
+            logger.error(f"Failed to batch upsert emails: {e}", exc_info=True)
             raise
     
     def upsert_task(self, task: Task) -> None:
         """Insert or update a task record using exact Teamwork API fields."""
+        self.upsert_tasks_batch([task])
+
+    def upsert_tasks_batch(self, tasks: List[Task]) -> None:
+        """Insert or update multiple task records in a batch using Airtable's upsert API."""
+        if not tasks:
+            return
+        
         try:
-            raw = task.raw or {}
+            records = []
+            for task in tasks:
+                raw = task.raw or {}
+                fields: Dict[str, Any] = {}
 
-            fields: Dict[str, Any] = {}
-
-            def set_if_present(key: str, value: Any) -> None:
-                if value is None:
-                    return
-                fields[key] = value
-
-            def set_dt_if_present(key: str, value: Optional[str]) -> None:
-                if not value:
-                    return
-                try:
-                    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-                    fields[key] = self._to_localized_z(dt)
-                except Exception:
+                def set_if_present(key: str, value: Any) -> None:
+                    if value is None:
+                        return
                     fields[key] = value
 
-            # Simple scalars
-            set_if_present("id", str(raw.get("id", task.task_id)))
-            set_if_present("name", raw.get("name"))
-            set_if_present("description", raw.get("description"))
-            set_if_present("status", raw.get("status"))
-            set_if_present("priority", raw.get("priority"))
-            if raw.get("progress") is not None:
-                set_if_present("progress", int(raw.get("progress")))
+                def set_dt_if_present(key: str, value: Optional[str]) -> None:
+                    if not value:
+                        return
+                    try:
+                        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                        fields[key] = self._to_localized_z(dt)
+                    except Exception:
+                        fields[key] = value
 
-            # Tags - store both IDs and names
-            if raw.get("tagIds"):
-                set_if_present("tagIds", ", ".join(str(t) for t in raw.get("tagIds", [])))
-            if task.tags:
-                set_if_present("tags", ", ".join(task.tags))
-            
-            # Assignees - store both IDs and names
-            if raw.get("assigneeUserIds"):
-                set_if_present("assigneeUserIds", ", ".join(str(u) for u in raw.get("assigneeUserIds", [])))
-            if task.assignees:
-                set_if_present("assignees", ", ".join(task.assignees))
-            
-            if raw.get("attachments") is not None:
-                set_if_present("attachments", json.dumps(raw.get("attachments")))
+                # Simple scalars
+                set_if_present("id", str(raw.get("id", task.task_id)))
+                set_if_present("name", raw.get("name"))
+                set_if_present("description", raw.get("description"))
+                set_if_present("status", raw.get("status"))
+                set_if_present("priority", raw.get("priority"))
+                if raw.get("progress") is not None:
+                    set_if_present("progress", int(raw.get("progress")))
 
-            # IDs
-            if raw.get("tasklistId") is not None:
-                set_if_present("tasklistId", str(raw.get("tasklistId")))
-            if raw.get("parentTask") is not None:
-                set_if_present("parentTask", str(raw.get("parentTask")))
+                # Tags - store both IDs and names
+                if raw.get("tagIds"):
+                    set_if_present("tagIds", ", ".join(str(t) for t in raw.get("tagIds", [])))
+                if task.tags:
+                    set_if_present("tags", ", ".join(task.tags))
+                
+                # Assignees - store both IDs and names
+                if raw.get("assigneeUserIds"):
+                    set_if_present("assigneeUserIds", ", ".join(str(u) for u in raw.get("assigneeUserIds", [])))
+                if task.assignees:
+                    set_if_present("assignees", ", ".join(task.assignees))
+                
+                if raw.get("attachments") is not None:
+                    set_if_present("attachments", json.dumps(raw.get("attachments")))
 
-            # Date/times & numerics
-            set_dt_if_present("startDate", raw.get("startDate"))
-            set_dt_if_present("dueDate", raw.get("dueDate"))
-            set_dt_if_present("updatedAt", raw.get("updatedAt"))
+                # IDs
+                if raw.get("tasklistId") is not None:
+                    set_if_present("tasklistId", str(raw.get("tasklistId")))
+                if raw.get("parentTask") is not None:
+                    set_if_present("parentTask", str(raw.get("parentTask")))
+
+                # Date/times & numerics
+                set_dt_if_present("startDate", raw.get("startDate"))
+                set_dt_if_present("dueDate", raw.get("dueDate"))
+                set_dt_if_present("updatedAt", raw.get("updatedAt"))
+                
+                # UpdatedBy - store both ID and name
+                if raw.get("updatedBy"):
+                    if isinstance(raw["updatedBy"], dict) and raw["updatedBy"].get("id"):
+                        set_if_present("updatedById", str(raw["updatedBy"]["id"]))
+                    elif not isinstance(raw["updatedBy"], dict):
+                        set_if_present("updatedById", str(raw["updatedBy"]))
+                if task.updated_by:
+                    set_if_present("updatedBy", task.updated_by)
+                
+                set_dt_if_present("createdAt", raw.get("createdAt"))
+                
+                # CreatedBy - store both ID and name
+                if raw.get("createdBy"):
+                    if isinstance(raw["createdBy"], dict) and raw["createdBy"].get("id"):
+                        set_if_present("createdById", str(raw["createdBy"]["id"]))
+                    elif not isinstance(raw["createdBy"], dict):
+                        set_if_present("createdById", str(raw["createdBy"]))
+                if task.created_by:
+                    set_if_present("createdBy", task.created_by)
+                set_dt_if_present("dateUpdated", raw.get("dateUpdated"))
+                if raw.get("estimateMinutes") is not None:
+                    set_if_present("estimateMinutes", int(raw.get("estimateMinutes")))
+                if raw.get("accumulatedEstimatedMinutes") is not None:
+                    set_if_present("accumulatedEstimatedMinutes", int(raw.get("accumulatedEstimatedMinutes")))
+                set_dt_if_present("deletedAt", raw.get("deletedAt"))
+                
+                records.append({"fields": fields})
             
-            # UpdatedBy - store both ID and name
-            if raw.get("updatedBy"):
-                if isinstance(raw["updatedBy"], dict) and raw["updatedBy"].get("id"):
-                    set_if_present("updatedById", str(raw["updatedBy"]["id"]))
-                elif not isinstance(raw["updatedBy"], dict):
-                    set_if_present("updatedById", str(raw["updatedBy"]))
-            if task.updated_by:
-                set_if_present("updatedBy", task.updated_by)
+            # Use Airtable's batch upsert API
+            # performUpsert with fieldsToMergeOn uses "id" as the external ID
+            response = self.tasks_table.batch_upsert(
+                records,
+                key_fields=["id"],
+                replace=False  # PATCH behavior, not PUT
+            )
             
-            set_dt_if_present("createdAt", raw.get("createdAt"))
+            # Update cache with created/updated records
+            if response and "records" in response:
+                for record in response["records"]:
+                    task_id = record.get("fields", {}).get("id")
+                    if task_id:
+                        self._task_cache[task_id] = record["id"]
             
-            # CreatedBy - store both ID and name
-            if raw.get("createdBy"):
-                if isinstance(raw["createdBy"], dict) and raw["createdBy"].get("id"):
-                    set_if_present("createdById", str(raw["createdBy"]["id"]))
-                elif not isinstance(raw["createdBy"], dict):
-                    set_if_present("createdById", str(raw["createdBy"]))
-            if task.created_by:
-                set_if_present("createdBy", task.created_by)
-            set_dt_if_present("dateUpdated", raw.get("dateUpdated"))
-            if raw.get("estimateMinutes") is not None:
-                set_if_present("estimateMinutes", int(raw.get("estimateMinutes")))
-            if raw.get("accumulatedEstimatedMinutes") is not None:
-                set_if_present("accumulatedEstimatedMinutes", int(raw.get("accumulatedEstimatedMinutes")))
-            set_dt_if_present("deletedAt", raw.get("deletedAt"))
-            
-            # Check if record exists
-            existing_record_id = self._find_task_record(str(raw.get("id", task.task_id)))
-            
-            if existing_record_id:
-                # Update existing record
-                self.tasks_table.update(existing_record_id, fields)
-                logger.info(f"Updated task {task.task_id} in Airtable")
-            else:
-                # Create new record
-                record = self.tasks_table.create(fields)
-                self._task_cache[str(raw.get("id", task.task_id))] = record["id"]
-                logger.info(f"Created task {task.task_id} in Airtable")
+            logger.info(f"Batch upserted {len(tasks)} tasks to Airtable")
         
         except Exception as e:
-            logger.error(f"Failed to upsert task {task.task_id}: {e}", exc_info=True)
+            logger.error(f"Failed to batch upsert tasks: {e}", exc_info=True)
             raise
     
     def mark_email_deleted(self, email_id: str) -> None:

@@ -1,6 +1,6 @@
 """Abstract database interface."""
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, List
 
 from src.db.models import Email, Task, Checkpoint
 
@@ -16,6 +16,24 @@ class DatabaseInterface(ABC):
     @abstractmethod
     def upsert_task(self, task: Task) -> None:
         """Insert or update a task record."""
+        pass
+    
+    @abstractmethod
+    def upsert_emails_batch(self, emails: List[Email]) -> None:
+        """Insert or update multiple email records in a batch.
+        
+        Args:
+            emails: List of Email objects to upsert (up to 10 recommended)
+        """
+        pass
+    
+    @abstractmethod
+    def upsert_tasks_batch(self, tasks: List[Task]) -> None:
+        """Insert or update multiple task records in a batch.
+        
+        Args:
+            tasks: List of Task objects to upsert (up to 10 recommended)
+        """
         pass
     
     @abstractmethod
