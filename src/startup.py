@@ -197,7 +197,7 @@ class StartupManager:
             logger.info(f"Fetching Teamwork tasks updated since {since.isoformat()}")
         else:
             # First run, fetch tasks from ...
-            since = datetime.now(timezone.utc) - timedelta(years=6)
+            since = datetime.now(timezone.utc) - timedelta(days=365*6)
             logger.info(f"First run: fetching Teamwork tasks from last 24 hours")
         
         # Fetch tasks - this will raise exception if API call fails
