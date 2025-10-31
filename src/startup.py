@@ -137,8 +137,8 @@ class StartupManager:
                 logger.error(f"Error stopping ngrok: {e}")
     
     def cache_teamwork_mappings(self):
-        """Fetch and cache people and tags from Teamwork."""
-        logger.info("Fetching Teamwork people and tags...")
+        """Fetch and cache people, tags, and companies from Teamwork."""
+        logger.info("Fetching Teamwork people, tags, and companies...")
         
         try:
             # Fetch people
@@ -147,10 +147,14 @@ class StartupManager:
             # Fetch tags
             tags = self.teamwork_client.get_tags()
             
+            # Fetch companies
+            companies = self.teamwork_client.get_companies()
+            
             # Update mappings cache
             mappings = get_mappings()
             mappings.update_people(people)
             mappings.update_tags(tags)
+            mappings.update_companies(companies)
             
             logger.info("Successfully cached Teamwork mappings")
         except Exception as e:
@@ -192,8 +196,8 @@ class StartupManager:
             since = checkpoint.last_event_time - timedelta(seconds=settings.BACKFILL_OVERLAP_SECONDS)
             logger.info(f"Fetching Teamwork tasks updated since {since.isoformat()}")
         else:
-            # First run, fetch tasks from last 24 hours
-            since = datetime.now(timezone.utc) - timedelta(hours=24)
+            # First run, fetch tasks from ...
+            since = datetime.now(timezone.utc) - timedelta(years=6)
             logger.info(f"First run: fetching Teamwork tasks from last 24 hours")
         
         # Fetch tasks - this will raise exception if API call fails

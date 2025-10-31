@@ -121,6 +121,46 @@ class TeamworkClient:
         except Exception as e:
             logger.error(f"Error fetching tags from Teamwork: {e}", exc_info=True)
         return []
+    
+    def get_companies(self) -> List[Dict[str, Any]]:
+        """
+        Get all companies from Teamwork.
+        
+        Returns:
+            List of company dictionaries
+        """
+        companies = []
+        page = 1
+        page_size = 100
+        
+        while True:
+            try:
+                params = {
+                    "page": page,
+                    "pageSize": page_size
+                }
+                
+                response = self._request("GET", "/projects/api/v3/companies.json", params=params)
+                
+                if response and "companies" in response:
+                    batch = response["companies"]
+                    companies.extend(batch)
+                    
+                    logger.info(f"Fetched {len(batch)} companies from Teamwork (page {page})")
+                    
+                    # Check if there are more pages
+                    if len(batch) < page_size:
+                        break
+                    page += 1
+                else:
+                    break
+            
+            except Exception as e:
+                logger.error(f"Error fetching companies from Teamwork: {e}", exc_info=True)
+                break
+        
+        logger.info(f"Total companies fetched: {len(companies)}")
+        return companies
 
     def build_task_web_url(self, task_id: str) -> str:
         """Best-effort construction of a human web URL to the task."""
