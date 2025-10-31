@@ -1,11 +1,10 @@
 """Teamwork event handler."""
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from src.db.models import Task
 from src.db.interface import DatabaseInterface
 from src.connectors.teamwork_client import TeamworkClient
-from src.connectors.teamwork_mappings import get_mappings
 from src.connectors.label_categories import get_label_categories
 from src.logging_conf import logger
 
@@ -41,15 +40,18 @@ class TeamworkEventHandler:
             self.db.mark_task_deleted(task_id)
             return None
         
-        # Fetch full task data from API
-        task_data = self.client.get_task_by_id(task_id)
-        if not task_data:
+        # Fetch full task data from API with included resources
+        api_response = self.client.get_task_by_id(task_id)
+        if not api_response:
             logger.warning(f"Could not fetch task {task_id} from Teamwork API")
-            # Use payload data as fallback
-            task_data = payload.get("task", payload)
+            return None
         
-        # Convert to Task model
-        task = self._parse_task(task_data)
+        # Extract task data and included resources
+        task_data = api_response.get("task", {})
+        included = api_response.get("included", {})
+        
+        # Convert to Task model using included data
+        task = self._parse_task(task_data, included)
         return task
     
     def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
@@ -77,8 +79,14 @@ class TeamworkEventHandler:
             return str(payload["task_id"])
         return ""
     
-    def _parse_task(self, data: Dict[str, Any]) -> Task:
-        """Parse Teamwork task data into Task model."""
+    def _parse_task(self, data: Dict[str, Any], included: Dict[str, Any]) -> Task:
+        """
+        Parse Teamwork task data into Task model using included resources.
+        
+        Args:
+            data: Task data from API
+            included: Included resources (projects, tasklists, users, companies, teams, tags)
+        """
         task_id = str(data.get("id", ""))
         
         # Parse dates
@@ -96,23 +104,30 @@ class TeamworkEventHandler:
             except (ValueError, AttributeError):
                 pass
         
-        # Parse tags - replace IDs with string values
-        mappings = get_mappings()
-        tags = []
-        if data.get("tags"):
-            if isinstance(data["tags"], list):
-                for tag in data["tags"]:
-                    if isinstance(tag, dict):
-                        # Try to get name first, fallback to ID lookup
-                        if tag.get("name"):
-                            tags.append(tag["name"])
-                        elif tag.get("id") is not None:
-                            tag_name = mappings.get_tag_name(tag["id"])
-                            tags.append(tag_name)
-                    else:
-                        # Assume it's an ID
-                        tag_name = mappings.get_tag_name(tag)
-                        tags.append(tag_name)
+        # Extract project and tasklist info from included data
+        project_id = None
+        project_name = None
+        tasklist_id = None
+        tasklist_name = None
+        
+        # Get tasklist info
+        if data.get("tasklist") and isinstance(data["tasklist"], dict):
+            tasklist_id = str(data["tasklist"].get("id", ""))
+            if tasklist_id and "tasklists" in included:
+                tasklist_data = included["tasklists"].get(tasklist_id, {})
+                tasklist_name = tasklist_data.get("name")
+                
+                # Get project from tasklist
+                if tasklist_data.get("project") and isinstance(tasklist_data["project"], dict):
+                    project_id = str(tasklist_data["project"].get("id", ""))
+        
+        # Get project info
+        if project_id and "projects" in included:
+            project_data = included["projects"].get(project_id, {})
+            project_name = project_data.get("name")
+        
+        # Parse tags using included data
+        tags = self._resolve_tags(data.get("tags", []), included.get("tags", {}))
         
         # Categorize tags
         categorized_tags = {}
@@ -120,50 +135,25 @@ class TeamworkEventHandler:
             label_categories = get_label_categories()
             categorized_tags = label_categories.categorize(tags)
         
-        # Parse assignees - replace IDs with string values
-        assignees = []
-        if data.get("assignees"):
-            if isinstance(data["assignees"], list):
-                for assignee in data["assignees"]:
-                    if isinstance(assignee, dict):
-                        # Try to get name first, fallback to ID lookup
-                        if assignee.get("fullName") or assignee.get("name"):
-                            assignees.append(assignee.get("fullName") or assignee.get("name"))
-                        elif assignee.get("id") is not None:
-                            person_name = mappings.get_person_name(assignee["id"])
-                            assignees.append(person_name)
-                    else:
-                        # Assume it's an ID
-                        person_name = mappings.get_person_name(assignee)
-                        assignees.append(person_name)
+        # Parse assignees - handle users, companies, and teams
+        assignees = self._resolve_assignees(
+            data.get("assignees", []),
+            included.get("users", {}),
+            included.get("companies", {}),
+            included.get("teams", {})
+        )
         
-        # Parse createdBy - replace ID with string value
-        created_by = None
-        if data.get("createdBy"):
-            created_by_data = data["createdBy"]
-            if isinstance(created_by_data, dict):
-                # Try to get name first, fallback to ID lookup
-                if created_by_data.get("fullName") or created_by_data.get("name"):
-                    created_by = created_by_data.get("fullName") or created_by_data.get("name")
-                elif created_by_data.get("id") is not None:
-                    created_by = mappings.get_person_name(created_by_data["id"])
-            else:
-                # Assume it's an ID
-                created_by = mappings.get_person_name(created_by_data)
+        # Parse createdBy
+        created_by = self._resolve_user_name(
+            data.get("createdBy"),
+            included.get("users", {})
+        )
         
-        # Parse updatedBy - replace ID with string value
-        updated_by = None
-        if data.get("updatedBy"):
-            updated_by_data = data["updatedBy"]
-            if isinstance(updated_by_data, dict):
-                # Try to get name first, fallback to ID lookup
-                if updated_by_data.get("fullName") or updated_by_data.get("name"):
-                    updated_by = updated_by_data.get("fullName") or updated_by_data.get("name")
-                elif updated_by_data.get("id") is not None:
-                    updated_by = mappings.get_person_name(updated_by_data["id"])
-            else:
-                # Assume it's an ID
-                updated_by = mappings.get_person_name(updated_by_data)
+        # Parse updatedBy
+        updated_by = self._resolve_user_name(
+            data.get("updatedBy"),
+            included.get("users", {})
+        )
         
         # Check if deleted/completed
         deleted = data.get("deleted", False) or data.get("completed", False)
@@ -173,20 +163,8 @@ class TeamworkEventHandler:
                 deleted_at = datetime.fromisoformat(data["completedAt"].replace("Z", "+00:00"))
             except (ValueError, AttributeError):
                 pass
-        
-        # Project ID may not be present; derive via tasklist if available
-        project_id = None
-        if data.get("projectId"):
-            project_id = str(data.get("projectId"))
-        elif data.get("tasklistId"):
-            try:
-                tl = self.client.get_tasklist_by_id(str(data.get("tasklistId")))
-                if tl and tl.get("project") and tl["project"].get("id"):
-                    project_id = str(tl["project"]["id"])
-            except Exception:
-                pass
 
-        # Build a web URL if not provided
+        # Build a web URL
         source_links = {}
         if data.get("url"):
             source_links["teamwork_url"] = data.get("url")
@@ -196,6 +174,9 @@ class TeamworkEventHandler:
         return Task(
             task_id=task_id,
             project_id=project_id,
+            project_name=project_name,
+            tasklist_id=tasklist_id,
+            tasklist_name=tasklist_name,
             title=data.get("name") or data.get("title"),
             description=data.get("description"),
             status=data.get("status") or data.get("state"),
@@ -211,4 +192,131 @@ class TeamworkEventHandler:
             source_links=source_links,
             raw=data
         )
+    
+    def _resolve_tags(self, tag_refs: List, tags_included: Dict[str, Any]) -> List[str]:
+        """
+        Resolve tag IDs to names using included data.
+        
+        Args:
+            tag_refs: List of tag references (can be dicts with id/type or just IDs)
+            tags_included: Included tags dictionary
+        
+        Returns:
+            List of tag names
+        """
+        tags = []
+        for tag_ref in tag_refs:
+            if isinstance(tag_ref, dict):
+                tag_id = str(tag_ref.get("id", ""))
+                # Check if tag name is in the included data
+                if tag_id and tag_id in tags_included:
+                    tag_name = tags_included[tag_id].get("name", tag_id)
+                    tags.append(tag_name)
+                # Fallback to name in the reference itself
+                elif tag_ref.get("name"):
+                    tags.append(tag_ref["name"])
+            elif tag_ref:
+                # Direct ID reference
+                tag_id = str(tag_ref)
+                if tag_id in tags_included:
+                    tags.append(tags_included[tag_id].get("name", tag_id))
+                else:
+                    tags.append(tag_id)
+        return tags
+    
+    def _resolve_assignees(
+        self, 
+        assignee_refs: List, 
+        users_included: Dict[str, Any],
+        companies_included: Dict[str, Any],
+        teams_included: Dict[str, Any]
+    ) -> List[str]:
+        """
+        Resolve assignee IDs to names using included data.
+        Handles users, companies, and teams.
+        
+        Args:
+            assignee_refs: List of assignee references with id and type
+            users_included: Included users dictionary
+            companies_included: Included companies dictionary
+            teams_included: Included teams dictionary
+        
+        Returns:
+            List of assignee names
+        """
+        assignees = []
+        for assignee_ref in assignee_refs:
+            if not isinstance(assignee_ref, dict):
+                continue
+            
+            assignee_id = str(assignee_ref.get("id", ""))
+            assignee_type = assignee_ref.get("type", "")
+            
+            if not assignee_id:
+                continue
+            
+            # Resolve based on type
+            if assignee_type == "users" and assignee_id in users_included:
+                user = users_included[assignee_id]
+                first_name = user.get("firstName", "")
+                last_name = user.get("lastName", "")
+                full_name = f"{first_name} {last_name}".strip()
+                assignees.append(full_name or user.get("email", assignee_id))
+            
+            elif assignee_type == "companies" and assignee_id in companies_included:
+                company = companies_included[assignee_id]
+                assignees.append(company.get("name", assignee_id))
+            
+            elif assignee_type == "teams" and assignee_id in teams_included:
+                team = teams_included[assignee_id]
+                assignees.append(team.get("name", assignee_id))
+            
+            else:
+                # Fallback - try all dictionaries
+                if assignee_id in users_included:
+                    user = users_included[assignee_id]
+                    first_name = user.get("firstName", "")
+                    last_name = user.get("lastName", "")
+                    full_name = f"{first_name} {last_name}".strip()
+                    assignees.append(full_name or user.get("email", assignee_id))
+                elif assignee_id in companies_included:
+                    assignees.append(companies_included[assignee_id].get("name", assignee_id))
+                elif assignee_id in teams_included:
+                    assignees.append(teams_included[assignee_id].get("name", assignee_id))
+                else:
+                    assignees.append(assignee_id)
+        
+        return assignees
+    
+    def _resolve_user_name(self, user_ref: Any, users_included: Dict[str, Any]) -> Optional[str]:
+        """
+        Resolve a user ID to name using included data.
+        
+        Args:
+            user_ref: User reference (can be ID or dict with id)
+            users_included: Included users dictionary
+        
+        Returns:
+            User name or None
+        """
+        if not user_ref:
+            return None
+        
+        user_id = None
+        if isinstance(user_ref, dict):
+            user_id = str(user_ref.get("id", ""))
+        else:
+            user_id = str(user_ref)
+        
+        if not user_id:
+            return None
+        
+        if user_id in users_included:
+            user = users_included[user_id]
+            first_name = user.get("firstName", "")
+            last_name = user.get("lastName", "")
+            full_name = f"{first_name} {last_name}".strip()
+            return full_name or user.get("email", user_id)
+        
+        return user_id
 

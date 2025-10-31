@@ -70,12 +70,27 @@ class TeamworkClient:
         
         return tasks
     
-    def get_task_by_id(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """Get a single task by ID."""
+    def get_task_by_id(self, task_id: str, include: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Get a single task by ID with related resources.
+        
+        Args:
+            task_id: The task ID
+            include: Comma-separated list of resources to include. 
+                    If None, defaults to "projects,tasklists,tags,users,companies,teams"
+        
+        Returns:
+            Full API response with task and included sections, or None if error
+        """
         try:
-            response = self._request("GET", f"/projects/api/v3/tasks/{task_id}.json")
+            # Default to including all related resources we need
+            if include is None:
+                include = "projects,tasklists,tags,users,companies,teams"
+            
+            params = {"include": include} if include else {}
+            
+            response = self._request("GET", f"/projects/api/v3/tasks/{task_id}.json", params=params)
             if response and "task" in response:
-                return response["task"]
+                return response  # Returns full response with task and included sections
         except Exception as e:
             logger.error(f"Error fetching task {task_id} from Teamwork: {e}", exc_info=True)
         return None

@@ -260,8 +260,20 @@ class AirtableDatabase(DatabaseInterface):
                 if raw.get("attachments") is not None:
                     set_if_present("attachments", json.dumps(raw.get("attachments")))
 
+                # Project info
+                if task.project_id:
+                    set_if_present("projectId", task.project_id)
+                if task.project_name:
+                    set_if_present("projectName", task.project_name)
+                
+                # Tasklist info
+                if task.tasklist_id:
+                    set_if_present("tasklistId", task.tasklist_id)
+                if task.tasklist_name:
+                    set_if_present("tasklistName", task.tasklist_name)
+                
                 # IDs
-                if raw.get("tasklistId") is not None:
+                if raw.get("tasklistId") is not None and not task.tasklist_id:
                     set_if_present("tasklistId", str(raw.get("tasklistId")))
                 if raw.get("parentTask") is not None:
                     set_if_present("parentTask", str(raw.get("parentTask")))

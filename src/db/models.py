@@ -84,6 +84,9 @@ class Task:
     """Represents a Teamwork task."""
     task_id: str
     project_id: Optional[str] = None
+    project_name: Optional[str] = None
+    tasklist_id: Optional[str] = None
+    tasklist_name: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = None
@@ -103,6 +106,9 @@ class Task:
         return {
             "task_id": self.task_id,
             "project_id": self.project_id,
+            "project_name": self.project_name,
+            "tasklist_id": self.tasklist_id,
+            "tasklist_name": self.tasklist_name,
             "title": self.title,
             "description": self.description,
             "status": self.status,

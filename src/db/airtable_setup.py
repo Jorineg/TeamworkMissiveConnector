@@ -245,7 +245,12 @@ class AirtableSetup:
                 {"name": "assigneeUserIds", "type": "multilineText"},
                 {"name": "assignees", "type": "multilineText"},
                 {"name": "attachments", "type": "multilineText"},
+                # Project info
+                {"name": "projectId", "type": "singleLineText"},
+                {"name": "projectName", "type": "singleLineText"},
+                # Tasklist info
                 {"name": "tasklistId", "type": "singleLineText"},
+                {"name": "tasklistName", "type": "singleLineText"},
                 {"name": "parentTask", "type": "singleLineText"},
                 {"name": "startDate", "type": "dateTime", "options": _get_datetime_field_options()},
                 {"name": "dueDate", "type": "dateTime", "options": _get_datetime_field_options()},

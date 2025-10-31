@@ -16,7 +16,6 @@ from src.db.models import Checkpoint
 from src.db.airtable_setup import AirtableSetup
 from src.connectors.teamwork_client import TeamworkClient
 from src.connectors.missive_client import MissiveClient
-from src.connectors.teamwork_mappings import get_mappings
 from src.connectors.label_categories import get_label_categories
 from src.webhooks.teamwork_webhooks import TeamworkWebhookManager
 from src.webhooks.missive_webhooks import MissiveWebhookManager
@@ -136,39 +135,10 @@ class StartupManager:
             except Exception as e:
                 logger.error(f"Error stopping ngrok: {e}")
     
-    def cache_teamwork_mappings(self):
-        """Fetch and cache people, tags, and companies from Teamwork."""
-        logger.info("Fetching Teamwork people, tags, and companies...")
-        
-        try:
-            # Fetch people
-            people = self.teamwork_client.get_people()
-            
-            # Fetch tags
-            tags = self.teamwork_client.get_tags()
-            
-            # Fetch companies
-            companies = self.teamwork_client.get_companies()
-            
-            # Update mappings cache
-            mappings = get_mappings()
-            mappings.update_people(people)
-            mappings.update_tags(tags)
-            mappings.update_companies(companies)
-            
-            logger.info("Successfully cached Teamwork mappings")
-        except Exception as e:
-            logger.error(f"Error caching Teamwork mappings: {e}", exc_info=True)
     
     def perform_backfill(self):
         """Perform startup backfill to catch missed events."""
         logger.info("Starting backfill operation...")
-        
-        # Cache Teamwork mappings first
-        try:
-            self.cache_teamwork_mappings()
-        except Exception as e:
-            logger.error(f"Error caching Teamwork mappings: {e}", exc_info=True)
         
         # Backfill Teamwork tasks
         try:
@@ -198,7 +168,7 @@ class StartupManager:
         else:
             # First run, fetch tasks from ...
             since = datetime.now(timezone.utc) - timedelta(days=365*6)
-            logger.info(f"First run: fetching Teamwork tasks from last 24 hours")
+            logger.info(f"First run: fetching Teamwork tasks from last 6 years")
         
         # Fetch tasks - this will raise exception if API call fails
         tasks = self.teamwork_client.get_tasks_updated_since(since, include_deleted=True)
