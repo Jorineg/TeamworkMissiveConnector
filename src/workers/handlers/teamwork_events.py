@@ -127,7 +127,7 @@ class TeamworkEventHandler:
             project_name = project_data.get("name")
         
         # Parse tags using included data
-        tags = self._resolve_tags(data.get("tags", []), included.get("tags", {}))
+        tags = self._resolve_tags(data.get("tags") or [], included.get("tags", {}))
         
         # Categorize tags
         categorized_tags = {}
@@ -137,7 +137,7 @@ class TeamworkEventHandler:
         
         # Parse assignees - handle users, companies, and teams
         assignees = self._resolve_assignees(
-            data.get("assignees", []),
+            data.get("assignees") or [],
             included.get("users", {}),
             included.get("companies", {}),
             included.get("teams", {})

@@ -70,7 +70,7 @@ class AirtableDatabase(DatabaseInterface):
                 f"{field_name} exceeds Airtable limit of {self.MAX_LONG_TEXT_LENGTH} chars "
                 f"(was {len(text)} chars) for {record_id}, truncating"
             )
-            text = text[:self.MAX_LONG_TEXT_LENGTH]
+            text = text[:self.MAX_LONG_TEXT_LENGTH-100]
             # Add truncation indicator
             if len(text) > 50:
                 text = text[:-50] + "\n\n[... Content truncated due to length ...]"

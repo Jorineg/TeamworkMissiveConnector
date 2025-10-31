@@ -22,7 +22,7 @@ def main():
         return
     
     # Get task ID from the first task in the list
-    task_id = str(tasks[0].get('id'))
+    task_id = str(tasks[2].get('id'))
     include_resources = "projects,tasklists,teams,companies,users,tags"
     print(f"Fetching single task with ID: {task_id}")
     print(f"Using endpoint: /projects/api/v3/tasks/{task_id}.json?include={include_resources}")
