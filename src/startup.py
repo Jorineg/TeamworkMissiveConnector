@@ -17,6 +17,7 @@ from src.db.airtable_setup import AirtableSetup
 from src.connectors.teamwork_client import TeamworkClient
 from src.connectors.missive_client import MissiveClient
 from src.connectors.teamwork_mappings import get_mappings
+from src.connectors.label_categories import get_label_categories
 from src.webhooks.teamwork_webhooks import TeamworkWebhookManager
 from src.webhooks.missive_webhooks import MissiveWebhookManager
 
@@ -82,7 +83,23 @@ class StartupManager:
         
         logger.info("Setting up Airtable tables...")
         setup = AirtableSetup()
-        return setup.ensure_tables_exist()
+        
+        # Create base tables
+        if not setup.ensure_tables_exist():
+            return False
+        
+        # Create category columns
+        label_categories = get_label_categories()
+        category_names = label_categories.get_category_names()
+        
+        if category_names:
+            logger.info(f"Setting up category columns: {', '.join(category_names)}")
+            if not setup.ensure_category_columns(category_names):
+                logger.warning("Failed to setup category columns, but continuing...")
+        else:
+            logger.info("No label categories configured, skipping category column creation")
+        
+        return True
     
     def configure_webhooks(self, public_url: str) -> None:
         """Automatically configure webhooks with the given URL."""

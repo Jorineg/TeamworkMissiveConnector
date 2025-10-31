@@ -1,5 +1,5 @@
 """Airtable setup and table creation utilities."""
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import requests
 
 from src import settings
@@ -58,6 +58,119 @@ class AirtableSetup:
         except Exception as e:
             logger.error(f"Failed to setup Airtable tables: {e}", exc_info=True)
             return False
+    
+    def ensure_category_columns(self, category_names: List[str]) -> bool:
+        """
+        Ensure category columns exist in both Emails and Tasks tables.
+        
+        Args:
+            category_names: List of category column names to create
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        if not category_names:
+            logger.info("No category columns to create")
+            return True
+        
+        logger.info(f"Ensuring {len(category_names)} category columns exist...")
+        
+        try:
+            # Ensure columns in Emails table
+            self._ensure_columns_in_table(
+                settings.AIRTABLE_EMAILS_TABLE,
+                category_names
+            )
+            
+            # Ensure columns in Tasks table
+            self._ensure_columns_in_table(
+                settings.AIRTABLE_TASKS_TABLE,
+                category_names
+            )
+            
+            logger.info("✓ Category columns setup complete")
+            return True
+        
+        except Exception as e:
+            logger.error(f"Failed to setup category columns: {e}", exc_info=True)
+            return False
+    
+    def _ensure_columns_in_table(self, table_name: str, column_names: List[str]) -> None:
+        """
+        Ensure specific columns exist in a table, creating them if necessary.
+        
+        Args:
+            table_name: Name of the table
+            column_names: List of column names to ensure exist
+        """
+        # Get table ID
+        table_id = self._get_table_id(table_name)
+        if not table_id:
+            logger.error(f"Table '{table_name}' not found")
+            return
+        
+        # Get existing fields
+        existing_fields = self._get_table_fields(table_id)
+        existing_field_names = [f["name"] for f in existing_fields]
+        
+        # Create missing columns
+        for column_name in column_names:
+            if column_name not in existing_field_names:
+                logger.info(f"Creating column '{column_name}' in table '{table_name}'")
+                self._create_field(table_id, column_name)
+            else:
+                logger.debug(f"✓ Column '{column_name}' exists in table '{table_name}'")
+    
+    def _get_table_id(self, table_name: str) -> Optional[str]:
+        """Get table ID by name."""
+        tables = self._get_existing_tables()
+        for table in tables:
+            if table["name"] == table_name:
+                return table["id"]
+        return None
+    
+    def _get_table_fields(self, table_id: str) -> List[Dict[str, Any]]:
+        """Get list of fields in a table."""
+        url = f"https://api.airtable.com/v0/meta/bases/{self.base_id}/tables"
+        response = requests.get(url, headers=self.headers, timeout=10)
+        response.raise_for_status()
+        
+        tables = response.json().get("tables", [])
+        for table in tables:
+            if table["id"] == table_id:
+                return table.get("fields", [])
+        
+        return []
+    
+    def _create_field(self, table_id: str, field_name: str) -> Dict[str, Any]:
+        """
+        Create a new field (column) in a table.
+        
+        Args:
+            table_id: Airtable table ID
+            field_name: Name of the field to create
+        
+        Returns:
+            Response data from Airtable API
+        """
+        url = f"https://api.airtable.com/v0/meta/bases/{self.base_id}/tables/{table_id}/fields"
+        
+        data = {
+            "name": field_name,
+            "type": "multilineText"  # Use multilineText for comma-separated values
+        }
+        
+        response = requests.post(url, headers=self.headers, json=data, timeout=30)
+        try:
+            response.raise_for_status()
+        except requests.HTTPError:
+            logger.error(
+                f"Error creating field '{field_name}': {response.status_code} - {response.text}"
+            )
+            raise
+        
+        logger.info(f"✓ Created field '{field_name}'")
+        return response.json()
 
     def _get_existing_tables(self) -> List[Dict[str, Any]]:
         """Get list of existing tables in the base."""

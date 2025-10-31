@@ -6,6 +6,7 @@ from src.db.models import Task
 from src.db.interface import DatabaseInterface
 from src.connectors.teamwork_client import TeamworkClient
 from src.connectors.teamwork_mappings import get_mappings
+from src.connectors.label_categories import get_label_categories
 from src.logging_conf import logger
 
 
@@ -113,6 +114,12 @@ class TeamworkEventHandler:
                         tag_name = mappings.get_tag_name(tag)
                         tags.append(tag_name)
         
+        # Categorize tags
+        categorized_tags = {}
+        if tags:
+            label_categories = get_label_categories()
+            categorized_tags = label_categories.categorize(tags)
+        
         # Parse assignees - replace IDs with string values
         assignees = []
         if data.get("assignees"):
@@ -193,6 +200,7 @@ class TeamworkEventHandler:
             description=data.get("description"),
             status=data.get("status") or data.get("state"),
             tags=tags,
+            categorized_tags=categorized_tags,
             assignees=assignees,
             created_by=created_by,
             updated_by=updated_by,

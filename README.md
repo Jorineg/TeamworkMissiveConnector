@@ -6,6 +6,7 @@ A reliable Python-based connector system that synchronizes data from Teamwork (t
 
 - **[SETUP.md](SETUP.md)** - Complete setup guide with step-by-step instructions
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical architecture and design decisions
+- **[docs/label_categorization.md](docs/label_categorization.md)** - Label and tag categorization feature
 
 ## Features
 
@@ -17,6 +18,7 @@ A reliable Python-based connector system that synchronizes data from Teamwork (t
 - **Attachment handling** from Missive emails (uploads to Airtable)
 - **Soft deletion** support with `deleted` flag
 - **ID-to-name mapping** for tags and people (cached locally)
+- **Label/tag categorization** - Automatically organize tags/labels into custom categories (e.g., customers, cost groups, rooms)
 - **Database abstraction** for easy migration from Airtable to PostgreSQL
 
 ## Quick Start
@@ -144,6 +146,13 @@ The system runs periodic polling to query APIs for updates:
 - Caches in `data/teamwork_people.json` and `data/teamwork_tags.json`
 - Replaces IDs with names when storing tasks in Airtable
 - Stores both IDs (for programmatic use) and names (for readability)
+
+### Label/Tag Categorization
+- Configure custom categories in `data/label_categories.json`
+- Automatically sort tags/labels into category columns (e.g., "Kunden", "Kostengruppe", "Räume")
+- Supports exact matches and wildcard patterns (`*` for multiple chars, `?` for single char)
+- Creates category columns in Airtable automatically
+- See [docs/label_categorization.md](docs/label_categorization.md) for detailed configuration
 
 ### Reliability
 - **Idempotent upserts** - Safe to process same event multiple times

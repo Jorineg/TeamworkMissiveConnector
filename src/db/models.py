@@ -45,6 +45,7 @@ class Email:
     sent_at: Optional[datetime] = None
     received_at: Optional[datetime] = None
     labels: List[str] = field(default_factory=list)
+    categorized_labels: Dict[str, List[str]] = field(default_factory=dict)
     draft: bool = False
     deleted: bool = False
     deleted_at: Optional[datetime] = None
@@ -87,6 +88,7 @@ class Task:
     description: Optional[str] = None
     status: Optional[str] = None
     tags: List[str] = field(default_factory=list)
+    categorized_tags: Dict[str, List[str]] = field(default_factory=dict)
     assignees: List[str] = field(default_factory=list)
     created_by: Optional[str] = None
     updated_by: Optional[str] = None

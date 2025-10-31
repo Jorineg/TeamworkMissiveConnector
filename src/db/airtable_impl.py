@@ -127,6 +127,12 @@ class AirtableDatabase(DatabaseInterface):
                     # Store as plain text to avoid schema option management
                     fields["Labels Text"] = ", ".join(email.labels)
                 
+                # Store categorized labels
+                if email.categorized_labels:
+                    for category, labels in email.categorized_labels.items():
+                        if labels:
+                            fields[category] = ", ".join(labels)
+                
                 # Handle attachments - Airtable expects list of dicts with 'url' keys
                 if email.attachments:
                     attachment_data = []
@@ -238,6 +244,12 @@ class AirtableDatabase(DatabaseInterface):
                     set_if_present("tagIds", ", ".join(str(t) for t in raw.get("tagIds", [])))
                 if task.tags:
                     set_if_present("tags", ", ".join(task.tags))
+                
+                # Store categorized tags
+                if task.categorized_tags:
+                    for category, tags in task.categorized_tags.items():
+                        if tags:
+                            fields[category] = ", ".join(tags)
                 
                 # Assignees - store both IDs and names
                 if raw.get("assigneeUserIds"):

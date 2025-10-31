@@ -7,6 +7,7 @@ from html import unescape
 from src.db.models import Email, Attachment
 from src.db.interface import DatabaseInterface
 from src.connectors.missive_client import MissiveClient
+from src.connectors.label_categories import get_label_categories
 from src.logging_conf import logger
 
 
@@ -202,6 +203,12 @@ class MissiveEventHandler:
         # Use labels from conversation (labels are on conversation, not individual messages)
         labels = conversation_labels if conversation_labels else []
         
+        # Categorize labels
+        categorized_labels = {}
+        if labels:
+            label_categories = get_label_categories()
+            categorized_labels = label_categories.categorize(labels)
+        
         # Parse draft status
         draft = data.get("draft", False)
         
@@ -235,6 +242,7 @@ class MissiveEventHandler:
             sent_at=sent_at,
             received_at=received_at or sent_at,
             labels=labels,
+            categorized_labels=categorized_labels,
             draft=draft,
             deleted=deleted,
             deleted_at=deleted_at,
