@@ -166,9 +166,9 @@ class StartupManager:
             since = checkpoint.last_event_time - timedelta(seconds=settings.BACKFILL_OVERLAP_SECONDS)
             logger.info(f"Fetching Teamwork tasks updated since {since.isoformat()}")
         else:
-            # First run, fetch tasks from ...
-            since = datetime.now(timezone.utc) - timedelta(days=365*6)
-            logger.info(f"First run: fetching Teamwork tasks from last 6 years")
+            # First run, fetch tasks from last 100 years
+            since = datetime.now(timezone.utc) - timedelta(days=36500)  # 100 years
+            logger.info(f"First run: fetching Teamwork tasks from last 100 years")
         
         # Fetch tasks - this will raise exception if API call fails
         tasks = self.teamwork_client.get_tasks_updated_since(since, include_deleted=True)
@@ -226,10 +226,9 @@ class StartupManager:
             since = checkpoint.last_event_time - timedelta(seconds=settings.BACKFILL_OVERLAP_SECONDS)
             logger.info(f"Fetching Missive conversations updated since {since.isoformat()}")
         else:
-            # First run, fetch conversations from configurable backfill period (default 30 days)
-            backfill_days = settings.MISSIVE_BACKFILL_DAYS
-            since = datetime.now(timezone.utc) - timedelta(days=backfill_days)
-            logger.info(f"First run: fetching Missive conversations from last {backfill_days} days")
+            # First run, fetch conversations from last 100 years
+            since = datetime.now(timezone.utc) - timedelta(days=36500)  # 100 years
+            logger.info(f"First run: fetching Missive conversations from last 100 years")
         
         # Fetch conversations - this will raise exception if API call fails
         conversations = self.missive_client.get_conversations_updated_since(since)

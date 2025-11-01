@@ -7,6 +7,7 @@ from src.db.interface import DatabaseInterface
 from src.connectors.teamwork_client import TeamworkClient
 from src.connectors.label_categories import get_label_categories
 from src.logging_conf import logger
+from src import settings
 
 
 class TeamworkEventHandler:
@@ -49,6 +50,11 @@ class TeamworkEventHandler:
         # Extract task data and included resources
         task_data = api_response.get("task", {})
         included = api_response.get("included", {})
+        
+        # Check if task should be filtered based on created date
+        if self._should_filter_by_date(task_data):
+            logger.info(f"Task {task_id} filtered: created before TEAMWORK_PROCESS_AFTER threshold")
+            return None
         
         # Convert to Task model using included data
         task = self._parse_task(task_data, included)
@@ -319,4 +325,37 @@ class TeamworkEventHandler:
             return full_name or user.get("email", user_id)
         
         return user_id
+    
+    def _should_filter_by_date(self, task_data: Dict[str, Any]) -> bool:
+        """
+        Check if task should be filtered based on created date.
+        
+        Args:
+            task_data: Task data from API
+        
+        Returns:
+            True if task should be filtered (skipped), False otherwise
+        """
+        if not settings.TEAMWORK_PROCESS_AFTER:
+            return False
+        
+        try:
+            # Parse the threshold date from DD.MM.YYYY format
+            threshold_date = datetime.strptime(settings.TEAMWORK_PROCESS_AFTER, "%d.%m.%Y")
+            threshold_date = threshold_date.replace(tzinfo=timezone.utc)
+            
+            # Parse task created date
+            created_at_str = task_data.get("createdAt")
+            if not created_at_str:
+                # If no created date, don't filter
+                return False
+            
+            created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+            
+            # Filter if created before threshold
+            return created_at < threshold_date
+        
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"Error parsing dates for filtering: {e}")
+            return False
 

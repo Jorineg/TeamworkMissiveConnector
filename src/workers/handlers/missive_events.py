@@ -9,6 +9,7 @@ from src.db.interface import DatabaseInterface
 from src.connectors.missive_client import MissiveClient
 from src.connectors.label_categories import get_label_categories
 from src.logging_conf import logger
+from src import settings
 
 
 class MissiveEventHandler:
@@ -63,6 +64,11 @@ class MissiveEventHandler:
                     if full_message:
                         # Use full message data which includes complete body
                         message_data = full_message
+                
+                # Check if message should be filtered based on received date
+                if self._should_filter_by_date(message_data):
+                    logger.info(f"Message {message_id} filtered: received before MISSIVE_PROCESS_AFTER threshold")
+                    continue
                 
                 email = self._parse_message(message_data, conversation_id, conversation_labels)
                 emails.append(email)
@@ -333,4 +339,49 @@ class MissiveEventHandler:
                 logger.error(f"Error parsing attachment: {e}", exc_info=True)
         
         return attachments
+    
+    def _should_filter_by_date(self, message_data: Dict[str, Any]) -> bool:
+        """
+        Check if message should be filtered based on received date.
+        
+        Args:
+            message_data: Message data from API
+        
+        Returns:
+            True if message should be filtered (skipped), False otherwise
+        """
+        if not settings.MISSIVE_PROCESS_AFTER:
+            return False
+        
+        try:
+            # Parse the threshold date from DD.MM.YYYY format
+            threshold_date = datetime.strptime(settings.MISSIVE_PROCESS_AFTER, "%d.%m.%Y")
+            threshold_date = threshold_date.replace(tzinfo=timezone.utc)
+            
+            # Parse message received date
+            # Try delivered_at first, then created_at
+            received_at = None
+            
+            if message_data.get("delivered_at"):
+                if isinstance(message_data["delivered_at"], int):
+                    received_at = datetime.fromtimestamp(message_data["delivered_at"], tz=timezone.utc)
+                else:
+                    received_at = datetime.fromisoformat(str(message_data["delivered_at"]).replace("Z", "+00:00"))
+            
+            elif message_data.get("created_at"):
+                if isinstance(message_data["created_at"], int):
+                    received_at = datetime.fromtimestamp(message_data["created_at"], tz=timezone.utc)
+                else:
+                    received_at = datetime.fromisoformat(str(message_data["created_at"]).replace("Z", "+00:00"))
+            
+            if not received_at:
+                # If no received date, don't filter
+                return False
+            
+            # Filter if received before threshold
+            return received_at < threshold_date
+        
+        except (ValueError, AttributeError, OSError) as e:
+            logger.warning(f"Error parsing dates for filtering: {e}")
+            return False
 

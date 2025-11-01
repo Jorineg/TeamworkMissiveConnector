@@ -5,6 +5,7 @@ A reliable Python-based connector system that synchronizes data from Teamwork (t
 ## 📚 Documentation
 
 - **[SETUP.md](SETUP.md)** - Complete setup guide with step-by-step instructions
+- **[ENV_VARIABLES.md](ENV_VARIABLES.md)** - Complete environment variables reference
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical architecture and design decisions
 - **[docs/label_categorization.md](docs/label_categorization.md)** - Label and tag categorization feature
 

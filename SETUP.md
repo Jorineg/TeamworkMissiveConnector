@@ -2,6 +2,8 @@
 
 Complete guide to setting up the Teamwork & Missive Connector.
 
+For a complete reference of all environment variables, see **[ENV_VARIABLES.md](ENV_VARIABLES.md)**.
+
 ## What You'll Need
 
 Before starting, make sure you have:
@@ -601,6 +603,8 @@ DISABLE_WEBHOOKS=false
 ## Advanced Configuration
 
 ### Environment Variables
+
+For a complete reference of all environment variables with examples and troubleshooting, see **[ENV_VARIABLES.md](ENV_VARIABLES.md)**.
 
 **Key settings:**
 - `DB_BACKEND`: `airtable` or `postgres`

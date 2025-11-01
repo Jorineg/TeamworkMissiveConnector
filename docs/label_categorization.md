@@ -20,8 +20,6 @@ Create a JSON file at `data/label_categories.json` with your category definition
 }
 ```
 
-An example file is provided at `data/label_categories.json.example` that you can copy and customize.
-
 ### 2. Mapping Format
 
 Each key in the JSON object represents a **category name** that will become a column in your Airtable tables. The value can be:
@@ -133,12 +131,6 @@ If you change the `label_categories.json` file:
 - `"R_*"` will not match `"r_101"`
 - Ensure your patterns match the actual casing used in your tags/labels
 
-### Performance
-
-- Pattern matching is performed in-memory and is very fast
-- The mapping file is loaded once at startup
-- To reload the mapping without restarting, you would need to restart the application
-
 ## Troubleshooting
 
 ### Categories Not Appearing
@@ -186,16 +178,6 @@ You can test your patterns by:
 3. Checking the Airtable columns after processing
 
 ## Implementation Details
-
-### Files Modified
-
-- `src/connectors/label_categories.py` - Core categorization logic
-- `src/db/airtable_setup.py` - Dynamic column creation
-- `src/startup.py` - Integration with startup process
-- `src/db/models.py` - Added `categorized_labels` and `categorized_tags` fields
-- `src/db/airtable_impl.py` - Storage of categorized data
-- `src/workers/handlers/missive_events.py` - Categorize email labels
-- `src/workers/handlers/teamwork_events.py` - Categorize task tags
 
 ### Data Flow
 
