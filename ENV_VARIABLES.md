@@ -218,23 +218,31 @@ These variables allow you to filter out old data from being synced to your datab
 
 ### `MISSIVE_PROCESS_AFTER`
 - **Description**: Only process Missive emails received on or after this date
-- **Default**: Not set (process all emails)
+- **Default**: Not set (fetches last 30 days on first run)
 - **Format**: `DD.MM.YYYY`
 - **Example**: `01.01.2020`
 - **Behavior**:
-  - Emails received **before** this date are **skipped** (marked as handled, not synced to database)
-  - Emails received **on or after** this date are **synced normally**
-  - If not set, all emails are processed
+  - On **first run**: API fetches conversations from this date onwards (reduces API calls)
+  - On **subsequent runs**: Uses checkpoint-based incremental fetching
+  - Emails received **before** this date are **not fetched** from API
+  - Additional filtering in handler ensures no old emails are synced
+  - If not set, defaults to last 30 days on first run
 - **Use case**: 
   - Skip old email history
-  - Reduce database size
-  - Speed up initial sync
+  - Reduce API calls and database size
+  - Speed up initial sync significantly
   - Focus on recent communications only
 
 **Important Notes on Date Filtering:**
-- The initial backfill will still **fetch** items from the last 100 years via API
-- However, items with dates before the threshold will be **skipped** (not saved to database)
-- This ensures the checkpoint advances properly without cluttering your database
+- **Teamwork**: 
+  - Initial backfill fetches tasks from the last 15 years via API
+  - Tasks created before `TEAMWORK_PROCESS_AFTER` are filtered after fetch (not saved to database)
+  - Ensures checkpoint advances properly
+- **Missive**: 
+  - Initial backfill only fetches conversations from `MISSIVE_PROCESS_AFTER` date onwards (or last 30 days if not set)
+  - Significantly reduces API calls on first run
+  - Additional handler-level filtering provides safety net
+  - Subsequent runs use checkpoint-based incremental fetching
 - Filtering is based on:
   - **Teamwork**: Task `createdAt` field
   - **Missive**: Message `delivered_at` or `created_at` field

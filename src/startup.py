@@ -166,9 +166,9 @@ class StartupManager:
             since = checkpoint.last_event_time - timedelta(seconds=settings.BACKFILL_OVERLAP_SECONDS)
             logger.info(f"Fetching Teamwork tasks updated since {since.isoformat()}")
         else:
-            # First run, fetch tasks from last 100 years
-            since = datetime.now(timezone.utc) - timedelta(days=36500)  # 100 years
-            logger.info(f"First run: fetching Teamwork tasks from last 100 years")
+            # First run, fetch tasks from last 15 years
+            since = datetime.now(timezone.utc) - timedelta(days=5475)  # 15 years
+            logger.info(f"First run: fetching Teamwork tasks from last 15 years")
         
         # Fetch tasks - this will raise exception if API call fails
         tasks = self.teamwork_client.get_tasks_updated_since(since, include_deleted=True)
@@ -226,9 +226,20 @@ class StartupManager:
             since = checkpoint.last_event_time - timedelta(seconds=settings.BACKFILL_OVERLAP_SECONDS)
             logger.info(f"Fetching Missive conversations updated since {since.isoformat()}")
         else:
-            # First run, fetch conversations from last 100 years
-            since = datetime.now(timezone.utc) - timedelta(days=36500)  # 100 years
-            logger.info(f"First run: fetching Missive conversations from last 100 years")
+            # First run - use MISSIVE_PROCESS_AFTER if set, otherwise default to 30 days
+            if settings.MISSIVE_PROCESS_AFTER:
+                try:
+                    since = datetime.strptime(settings.MISSIVE_PROCESS_AFTER, "%d.%m.%Y")
+                    since = since.replace(tzinfo=timezone.utc)
+                    logger.info(f"First run: fetching Missive conversations from {settings.MISSIVE_PROCESS_AFTER} onwards")
+                except ValueError:
+                    logger.error(f"Invalid MISSIVE_PROCESS_AFTER format: {settings.MISSIVE_PROCESS_AFTER}. Using default 30 days.")
+                    since = datetime.now(timezone.utc) - timedelta(days=30)
+                    logger.info(f"First run: fetching Missive conversations from last 30 days")
+            else:
+                # Default to 30 days if no filter is set
+                since = datetime.now(timezone.utc) - timedelta(days=30)
+                logger.info(f"First run: fetching Missive conversations from last 30 days")
         
         # Fetch conversations - this will raise exception if API call fails
         conversations = self.missive_client.get_conversations_updated_since(since)
