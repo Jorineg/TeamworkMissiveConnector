@@ -22,52 +22,79 @@ class TeamworkClient:
     def get_tasks_updated_since(self, since: datetime, include_deleted: bool = True) -> List[Dict[str, Any]]:
         """
         Get all tasks updated since a given datetime.
-        
+
         Args:
             since: Datetime to fetch tasks from
             include_deleted: Whether to include deleted/completed tasks
-        
+
+        Returns:
+            List of task dictionaries
+        """
+        return self._get_tasks_with_filter("updatedAfter", since, include_deleted)
+
+    def get_tasks_created_since(self, since: datetime, include_deleted: bool = True) -> List[Dict[str, Any]]:
+        """
+        Get all tasks created since a given datetime.
+
+        Args:
+            since: Datetime to fetch tasks from
+            include_deleted: Whether to include deleted/completed tasks
+
+        Returns:
+            List of task dictionaries
+        """
+        return self._get_tasks_with_filter("createdAfter", since, include_deleted)
+
+    def _get_tasks_with_filter(self, filter_param: str, since: datetime, include_deleted: bool = True) -> List[Dict[str, Any]]:
+        """
+        Get all tasks using a specified filter parameter.
+
+        Args:
+            filter_param: The API parameter to use ("updatedAfter" or "createdAfter")
+            since: Datetime to fetch tasks from
+            include_deleted: Whether to include deleted/completed tasks
+
         Returns:
             List of task dictionaries
         """
         tasks = []
         page = 1
         page_size = 100
-        
+
         # Format datetime for Teamwork API: ISO 8601 in UTC, seconds precision
         # Example: 2025-10-15T22:12:53Z
         since_utc = since.astimezone(timezone.utc) if since.tzinfo else since.replace(tzinfo=timezone.utc)
-        updated_after = since_utc.isoformat(timespec="seconds").replace("+00:00", "Z")
-        
+        filter_value = since_utc.isoformat(timespec="seconds").replace("+00:00", "Z")
+
         while True:
             try:
                 params = {
                     "page": page,
                     "pageSize": page_size,
-                    "updatedAfter": updated_after,  # Correct param name per API docs
+                    filter_param: filter_value,
                     "includeCompletedTasks": "true" if include_deleted else "false",
                     "includeArchivedProjects": "true" if include_deleted else "false"
                 }
-                
+
                 response = self._request("GET", "/projects/api/v3/tasks.json", params=params)
-                
+
                 if response and "tasks" in response:
                     batch = response["tasks"]
                     tasks.extend(batch)
-                    
-                    logger.info(f"Fetched {len(batch)} tasks from Teamwork (page {page})")
-                    
+
+                    logger.info(f"Fetched {len(batch)} tasks from Teamwork (page {page}, filter: {filter_param})")
+
                     # Check if there are more pages
                     if len(batch) < page_size:
                         break
                     page += 1
                 else:
                     break
-            
+
             except Exception as e:
                 logger.error(f"Error fetching tasks from Teamwork: {e}", exc_info=True)
                 break
-        
+
         return tasks
     
     def get_task_by_id(self, task_id: str, include: Optional[str] = None) -> Optional[Dict[str, Any]]:
