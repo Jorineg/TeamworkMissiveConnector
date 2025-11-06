@@ -2,14 +2,50 @@
 
 This document provides a comprehensive list of all environment variables used by the Teamwork & Missive Connector.
 
+## Quick Reference Table
+
+| Variable | Required? | Default | Purpose | Details |
+|----------|-----------|---------|---------|---------|
+| [`TEAMWORK_BASE_URL`](#teamwork_base_url) | ✅ Yes | - | Teamwork instance URL | [↓](#teamwork_base_url) |
+| [`TEAMWORK_API_KEY`](#teamwork_api_key) | ✅ Yes | - | Teamwork authentication | [↓](#teamwork_api_key) |
+| [`TEAMWORK_WEBHOOK_SECRET`](#teamwork_webhook_secret) | ❌ No | Empty | Webhook signature validation | [↓](#teamwork_webhook_secret) |
+| [`TEAMWORK_PROCESS_AFTER`](#teamwork_process_after) | ❌ No | None | Filter tasks by created date | [↓](#teamwork_process_after) |
+| [`INCLUDE_COMPLETED_TASKS_ON_INITIAL_SYNC`](#include_completed_tasks_on_initial_sync) | ❌ No | `true` | Include completed tasks on initial sync | [↓](#include_completed_tasks_on_initial_sync) |
+| [`MISSIVE_API_TOKEN`](#missive_api_token) | ✅ Yes | - | Missive authentication | [↓](#missive_api_token) |
+| [`MISSIVE_WEBHOOK_SECRET`](#missive_webhook_secret) | ❌ No | Empty | Webhook signature validation | [↓](#missive_webhook_secret) |
+| [`MISSIVE_PROCESS_AFTER`](#missive_process_after) | ❌ No | None | Filter emails by received date | [↓](#missive_process_after) |
+| [`AIRTABLE_API_KEY`](#airtable_api_key) | ⚠️ If Airtable | - | Airtable authentication | [↓](#airtable_api_key) |
+| [`AIRTABLE_BASE_ID`](#airtable_base_id) | ⚠️ If Airtable | - | Airtable base identifier | [↓](#airtable_base_id) |
+| [`AIRTABLE_EMAILS_TABLE`](#airtable_emails_table) | ❌ No | `Emails` | Emails table name | [↓](#airtable_emails_table) |
+| [`AIRTABLE_TASKS_TABLE`](#airtable_tasks_table) | ❌ No | `Tasks` | Tasks table name | [↓](#airtable_tasks_table) |
+| [`DB_BACKEND`](#db_backend) | ❌ No | `airtable` | Database choice | [↓](#db_backend) |
+| [`PG_DSN`](#pg_dsn) | ⚠️ If Postgres | - | PostgreSQL connection | [↓](#pg_dsn) |
+| [`NGROK_AUTHTOKEN`](#ngrok_authtoken) | ⚠️ If webhooks | - | ngrok tunnel (local dev) | [↓](#ngrok_authtoken) |
+| [`DISABLE_WEBHOOKS`](#disable_webhooks) | ❌ No | `false` | Enable/disable webhooks | [↓](#disable_webhooks) |
+| [`APP_PORT`](#app_port) | ❌ No | `5000` | Flask application port | [↓](#app_port) |
+| [`LOG_LEVEL`](#log_level) | ❌ No | `INFO` | Logging verbosity | [↓](#log_level) |
+| [`TIMEZONE`](#timezone) | ❌ No | `Europe/Berlin` | Timestamp timezone | [↓](#timezone) |
+| [`PERIODIC_BACKFILL_INTERVAL`](#periodic_backfill_interval) | ❌ No | `5`/`60` | Polling interval (seconds) | [↓](#periodic_backfill_interval) |
+| [`BACKFILL_OVERLAP_SECONDS`](#backfill_overlap_seconds) | ❌ No | `120` | Checkpoint overlap window | [↓](#backfill_overlap_seconds) |
+| [`MAX_QUEUE_ATTEMPTS`](#max_queue_attempts) | ❌ No | `3` | Max retry attempts | [↓](#max_queue_attempts) |
+| [`SPOOL_RETRY_SECONDS`](#spool_retry_seconds) | ❌ No | `60` | Retry wait time | [↓](#spool_retry_seconds) |
+
+**Legend:**
+- ✅ Always required
+- ⚠️ Conditionally required
+- ❌ Optional
+
+---
+
 ## Table of Contents
 
 - [Required Variables](#required-variables)
 - [Optional Variables](#optional-variables)
 - [Database Configuration](#database-configuration)
-- [Webhook Configuration](#webhook-configuration)
-- [Advanced Configuration](#advanced-configuration)
+- [Queue Settings](#queue-settings)
 - [Date Filtering](#date-filtering)
+- [Example Configurations](#example-configurations)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -345,41 +381,6 @@ LOG_LEVEL=DEBUG
 DISABLE_WEBHOOKS=true
 PERIODIC_BACKFILL_INTERVAL=10
 ```
-
----
-
-## Quick Reference Table
-
-| Variable | Required? | Default | Purpose |
-|----------|-----------|---------|---------|
-| `TEAMWORK_BASE_URL` | ✅ Yes | - | Teamwork instance URL |
-| `TEAMWORK_API_KEY` | ✅ Yes | - | Teamwork authentication |
-| `TEAMWORK_WEBHOOK_SECRET` | ❌ No | Empty | Webhook signature validation |
-| `TEAMWORK_PROCESS_AFTER` | ❌ No | None | Filter tasks by created date |
-| `INCLUDE_COMPLETED_TASKS_ON_INITIAL_SYNC` | ❌ No | `true` | Include completed tasks on initial sync |
-| `MISSIVE_API_TOKEN` | ✅ Yes | - | Missive authentication |
-| `MISSIVE_WEBHOOK_SECRET` | ❌ No | Empty | Webhook signature validation |
-| `MISSIVE_PROCESS_AFTER` | ❌ No | None | Filter emails by received date |
-| `AIRTABLE_API_KEY` | ⚠️ If Airtable | - | Airtable authentication |
-| `AIRTABLE_BASE_ID` | ⚠️ If Airtable | - | Airtable base identifier |
-| `AIRTABLE_EMAILS_TABLE` | ❌ No | `Emails` | Emails table name |
-| `AIRTABLE_TASKS_TABLE` | ❌ No | `Tasks` | Tasks table name |
-| `DB_BACKEND` | ❌ No | `airtable` | Database choice |
-| `PG_DSN` | ⚠️ If Postgres | - | PostgreSQL connection |
-| `NGROK_AUTHTOKEN` | ⚠️ If webhooks | - | ngrok tunnel (local dev) |
-| `DISABLE_WEBHOOKS` | ❌ No | `false` | Enable/disable webhooks |
-| `APP_PORT` | ❌ No | `5000` | Flask application port |
-| `LOG_LEVEL` | ❌ No | `INFO` | Logging verbosity |
-| `TIMEZONE` | ❌ No | `Europe/Berlin` | Timestamp timezone |
-| `PERIODIC_BACKFILL_INTERVAL` | ❌ No | `5`/`60` | Polling interval (seconds) |
-| `BACKFILL_OVERLAP_SECONDS` | ❌ No | `120` | Checkpoint overlap window |
-| `MAX_QUEUE_ATTEMPTS` | ❌ No | `3` | Max retry attempts |
-| `SPOOL_RETRY_SECONDS` | ❌ No | `60` | Retry wait time |
-
-**Legend:**
-- ✅ Always required
-- ⚠️ Conditionally required
-- ❌ Optional
 
 ---
 
