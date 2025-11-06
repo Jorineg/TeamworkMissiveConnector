@@ -218,7 +218,7 @@ PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
 - Rate limit handling (429 → retry with backoff)
 - Server error retry (5xx → exponential backoff)
 - Fetch tasks updated since timestamp
-- Include deleted/completed tasks
+- Include completed tasks (controlled by `include_completed` parameter)
 
 #### Missive Client (`src/connectors/missive_client.py`)
 

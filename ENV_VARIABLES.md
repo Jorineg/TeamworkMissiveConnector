@@ -216,6 +216,22 @@ These variables allow you to filter out old data from being synced to your datab
   - Speed up initial sync
   - Focus on recent projects only
 
+### `INCLUDE_COMPLETED_TASKS_ON_INITIAL_SYNC`
+- **Description**: Control whether completed tasks are included during the initial sync
+- **Default**: `true`
+- **Format**: Boolean (`true`, `false`, `1`, `0`, `yes`, `no`)
+- **Example**: `false`
+- **Behavior**:
+  - When `true`: Completed tasks are included during the first sync (default)
+  - When `false`: Only active tasks are synced during the first sync
+  - **Important**: This setting only affects the **initial sync** (when no checkpoint exists)
+  - Subsequent syncs **always include completed tasks** to capture task status changes
+- **Use case**: 
+  - Set to `false` if you only want to track active tasks
+  - Reduces initial sync time and database size
+  - Useful when you don't need historical completed task data
+- **API mapping**: Controls the `includeCompletedTasks` parameter in Teamwork API
+
 ### `MISSIVE_PROCESS_AFTER`
 - **Description**: Only process Missive emails received on or after this date
 - **Default**: Not set (fetches last 30 days on first run)
@@ -237,6 +253,8 @@ These variables allow you to filter out old data from being synced to your datab
 - **Teamwork**: 
   - Initial backfill fetches tasks from the last 15 years via API
   - Tasks created before `TEAMWORK_PROCESS_AFTER` are filtered after fetch (not saved to database)
+  - Use `INCLUDE_COMPLETED_TASKS_ON_INITIAL_SYNC=false` to exclude completed tasks during initial sync
+  - Subsequent syncs always include completed tasks to track status changes
   - Ensures checkpoint advances properly
 - **Missive**: 
   - Initial backfill only fetches conversations from `MISSIVE_PROCESS_AFTER` date onwards (or last 30 days if not set)
@@ -306,6 +324,9 @@ AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
 TEAMWORK_PROCESS_AFTER=01.01.2020
 MISSIVE_PROCESS_AFTER=01.01.2020
 
+# Only sync active tasks on initial sync
+INCLUDE_COMPLETED_TASKS_ON_INITIAL_SYNC=false
+
 # Disable webhooks for simpler setup
 DISABLE_WEBHOOKS=true
 ```
@@ -335,6 +356,7 @@ PERIODIC_BACKFILL_INTERVAL=10
 | `TEAMWORK_API_KEY` | ✅ Yes | - | Teamwork authentication |
 | `TEAMWORK_WEBHOOK_SECRET` | ❌ No | Empty | Webhook signature validation |
 | `TEAMWORK_PROCESS_AFTER` | ❌ No | None | Filter tasks by created date |
+| `INCLUDE_COMPLETED_TASKS_ON_INITIAL_SYNC` | ❌ No | `true` | Include completed tasks on initial sync |
 | `MISSIVE_API_TOKEN` | ✅ Yes | - | Missive authentication |
 | `MISSIVE_WEBHOOK_SECRET` | ❌ No | Empty | Webhook signature validation |
 | `MISSIVE_PROCESS_AFTER` | ❌ No | None | Filter emails by received date |

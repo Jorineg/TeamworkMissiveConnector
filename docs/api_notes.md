@@ -15,8 +15,9 @@ This document contains notes about the Teamwork and Missive APIs based on implem
 - **Endpoint**: `GET /projects/api/v3/tasks.json`
 - **Parameters**:
   - `updatedAfter`: ISO 8601 UTC with seconds, e.g. `2025-10-15T22:12:53Z`
-  - `includeCompletedTasks`: `true` to include completed/deleted
+  - `includeCompletedTasks`: `true` to include completed tasks
   - `includeArchivedProjects`: `true` to include tasks from archived projects
+  - `showDeleted`: `true` to include deleted items (separate from completed)
   - `page`: Page number (starts at 1)
   - `pageSize`: Items per page (default 50, max 500)
 

@@ -19,40 +19,40 @@ class TeamworkClient:
         self.session = requests.Session()
         self.session.auth = self.auth
     
-    def get_tasks_updated_since(self, since: datetime, include_deleted: bool = True) -> List[Dict[str, Any]]:
+    def get_tasks_updated_since(self, since: datetime, include_completed: bool = True) -> List[Dict[str, Any]]:
         """
         Get all tasks updated since a given datetime.
 
         Args:
             since: Datetime to fetch tasks from
-            include_deleted: Whether to include deleted/completed tasks
+            include_completed: Whether to include completed tasks
 
         Returns:
             List of task dictionaries
         """
-        return self._get_tasks_with_filter("updatedAfter", since, include_deleted)
+        return self._get_tasks_with_filter("updatedAfter", since, include_completed)
 
-    def get_tasks_created_since(self, since: datetime, include_deleted: bool = True) -> List[Dict[str, Any]]:
+def get_tasks_created_since(self, since: datetime, include_completed: bool = True) -> List[Dict[str, Any]]:
         """
         Get all tasks created since a given datetime.
 
         Args:
             since: Datetime to fetch tasks from
-            include_deleted: Whether to include deleted/completed tasks
+            include_completed: Whether to include completed tasks
 
         Returns:
             List of task dictionaries
-        """
-        return self._get_tasks_with_filter("createdAfter", since, include_deleted)
+"""
+        return self._get_tasks_with_filter("createdAfter", since, include_completed)
 
-    def _get_tasks_with_filter(self, filter_param: str, since: datetime, include_deleted: bool = True) -> List[Dict[str, Any]]:
+    def _get_tasks_with_filter(self, filter_param: str, since: datetime, include_completed: bool = True) -> List[Dict[str, Any]]:
         """
         Get all tasks using a specified filter parameter.
 
         Args:
             filter_param: The API parameter to use ("updatedAfter" or "createdAfter")
             since: Datetime to fetch tasks from
-            include_deleted: Whether to include deleted/completed tasks
+            include_completed: Whether to include completed tasks
 
         Returns:
             List of task dictionaries
@@ -72,8 +72,8 @@ class TeamworkClient:
                     "page": page,
                     "pageSize": page_size,
                     filter_param: filter_value,
-                    "includeCompletedTasks": "true" if include_deleted else "false",
-                    "includeArchivedProjects": "true" if include_deleted else "false"
+                    "includeCompletedTasks": "true" if include_completed else "false",
+                    "includeArchivedProjects": "true" if include_completed else "false"
                 }
 
                 response = self._request("GET", "/projects/api/v3/tasks.json", params=params)

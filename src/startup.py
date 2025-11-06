@@ -165,27 +165,30 @@ class StartupManager:
             # Fetch tasks updated since checkpoint with overlap window
             since = checkpoint.last_event_time - timedelta(seconds=settings.BACKFILL_OVERLAP_SECONDS)
             logger.info(f"Fetching Teamwork tasks updated since {since.isoformat()}")
-            # Use updated date for subsequent syncs
-            tasks = self.teamwork_client.get_tasks_updated_since(since, include_deleted=True)
+            # Use updated date for subsequent syncs (always include completed tasks to capture status changes)
+            tasks = self.teamwork_client.get_tasks_updated_since(since, include_completed=True)
         else:
             # First run - use TEAMWORK_PROCESS_AFTER if set, otherwise default to 15 years
+            include_completed = settings.INCLUDE_COMPLETED_TASKS_ON_INITIAL_SYNC
+            logger.info(f"Initial sync: including completed tasks = {include_completed}")
+            
             if settings.TEAMWORK_PROCESS_AFTER:
                 try:
                     since = datetime.strptime(settings.TEAMWORK_PROCESS_AFTER, "%d.%m.%Y")
                     since = since.replace(tzinfo=timezone.utc)
                     logger.info(f"First run: fetching Teamwork tasks created since {settings.TEAMWORK_PROCESS_AFTER}")
                     # Use created date for first run
-                    tasks = self.teamwork_client.get_tasks_created_since(since, include_deleted=True)
+                    tasks = self.teamwork_client.get_tasks_created_since(since, include_completed=include_completed)
                 except ValueError:
                     logger.error(f"Invalid TEAMWORK_PROCESS_AFTER format: {settings.TEAMWORK_PROCESS_AFTER}. Using default 15 years.")
                     since = datetime.now(timezone.utc) - timedelta(days=5475)  # 15 years
                     logger.info(f"First run: fetching Teamwork tasks from last 15 years")
-                    tasks = self.teamwork_client.get_tasks_updated_since(since, include_deleted=True)
+                    tasks = self.teamwork_client.get_tasks_updated_since(since, include_completed=include_completed)
             else:
                 # Default to 15 years if no filter is set
                 since = datetime.now(timezone.utc) - timedelta(days=5475)  # 15 years
                 logger.info(f"First run: fetching Teamwork tasks from last 15 years")
-                tasks = self.teamwork_client.get_tasks_updated_since(since, include_deleted=True)
+                tasks = self.teamwork_client.get_tasks_updated_since(since, include_completed=include_completed)
 
         logger.info(f"Found {len(tasks)} Teamwork tasks to backfill")
         

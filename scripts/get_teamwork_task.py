@@ -15,7 +15,7 @@ def main():
     
     # Get tasks from the last 30 days to find a task ID
     since = datetime.now(timezone.utc) - timedelta(days=30)
-    tasks = client.get_tasks_updated_since(since, include_deleted=False)
+    tasks = client.get_tasks_updated_since(since, include_completed=False)
     
     if not tasks:
         print("No tasks found")
