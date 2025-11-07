@@ -33,12 +33,16 @@ class StartupManager:
     
     def _create_database(self) -> DatabaseInterface:
         """Create database instance based on configuration."""
-        if settings.DB_BACKEND == "airtable":
-            return AirtableDatabase()
-        elif settings.DB_BACKEND == "postgres":
-            return PostgresDatabase()
-        else:
-            raise ValueError(f"Invalid DB_BACKEND: {settings.DB_BACKEND}")
+        try:
+            if settings.DB_BACKEND == "airtable":
+                return AirtableDatabase()
+            elif settings.DB_BACKEND == "postgres":
+                return PostgresDatabase()
+            else:
+                raise ValueError(f"Invalid DB_BACKEND: {settings.DB_BACKEND}")
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {e}", exc_info=True)
+            raise
     
     def start_ngrok(self) -> Optional[str]:
         """

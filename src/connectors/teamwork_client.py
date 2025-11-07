@@ -32,18 +32,18 @@ class TeamworkClient:
         """
         return self._get_tasks_with_filter("updatedAfter", since, include_completed)
 
-def get_tasks_created_since(self, since: datetime, include_completed: bool = True) -> List[Dict[str, Any]]:
-        """
-        Get all tasks created since a given datetime.
+    def get_tasks_created_since(self, since: datetime, include_completed: bool = True) -> List[Dict[str, Any]]:
+            """
+            Get all tasks created since a given datetime.
 
-        Args:
-            since: Datetime to fetch tasks from
-            include_completed: Whether to include completed tasks
+            Args:
+                since: Datetime to fetch tasks from
+                include_completed: Whether to include completed tasks
 
-        Returns:
-            List of task dictionaries
-"""
-        return self._get_tasks_with_filter("createdAfter", since, include_completed)
+            Returns:
+                List of task dictionaries
+            """
+            return self._get_tasks_with_filter("createdAfter", since, include_completed)
 
     def _get_tasks_with_filter(self, filter_param: str, since: datetime, include_completed: bool = True) -> List[Dict[str, Any]]:
         """
