@@ -5,6 +5,7 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 import json
 from datetime import datetime, timezone
+from logtail import LogtailHandler
 
 from src import settings
 
@@ -63,6 +64,26 @@ def setup_logging():
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(JSONFormatter())
     root_logger.addHandler(file_handler)
+    
+    # Betterstack handler (if configured)
+    if settings.BETTERSTACK_SOURCE_TOKEN:
+        try:
+            # Use custom host if provided, otherwise use default
+            handler_kwargs = {"source_token": settings.BETTERSTACK_SOURCE_TOKEN}
+            if settings.BETTERSTACK_INGEST_HOST:
+                handler_kwargs["host"] = settings.BETTERSTACK_INGEST_HOST
+            
+            betterstack_handler = LogtailHandler(**handler_kwargs)
+            betterstack_handler.setLevel(logging.DEBUG)  # Explicitly set handler level
+            betterstack_handler.setFormatter(console_formatter)
+            root_logger.addHandler(betterstack_handler)
+            
+            host_info = settings.BETTERSTACK_INGEST_HOST or "default (in.logs.betterstack.com)"
+            root_logger.info(f"Betterstack logging enabled (host: {host_info})")
+        except Exception as e:
+            root_logger.warning(f"Failed to initialize Betterstack logging: {e}")
+    else:
+        root_logger.info("Betterstack logging not configured (BETTERSTACK_SOURCE_TOKEN not set)")
     
     # Suppress noisy loggers
     logging.getLogger("urllib3").setLevel(logging.WARNING)

@@ -36,6 +36,10 @@ MISSIVE_API_TOKEN = os.getenv("MISSIVE_API_TOKEN")
 MISSIVE_WEBHOOK_SECRET = os.getenv("MISSIVE_WEBHOOK_SECRET", "")
 MISSIVE_PROCESS_AFTER = os.getenv("MISSIVE_PROCESS_AFTER")  # Format: DD.MM.YYYY
 
+# Betterstack settings
+BETTERSTACK_SOURCE_TOKEN = os.getenv("BETTERSTACK_SOURCE_TOKEN")
+BETTERSTACK_INGEST_HOST = os.getenv("BETTERSTACK_INGEST_HOST")  # Optional: custom ingestion host
+
 # Database settings
 DB_BACKEND = os.getenv("DB_BACKEND", "airtable")
 

@@ -25,6 +25,8 @@ This document provides a comprehensive list of all environment variables used by
 | [`APP_PORT`](#app_port) | ❌ No | `5000` | Flask application port | [↓](#app_port) |
 | [`LOG_LEVEL`](#log_level) | ❌ No | `INFO` | Logging verbosity | [↓](#log_level) |
 | [`TIMEZONE`](#timezone) | ❌ No | `Europe/Berlin` | Timestamp timezone | [↓](#timezone) |
+| [`BETTERSTACK_SOURCE_TOKEN`](#betterstack_source_token) | ❌ No | - | Betterstack cloud logging | [↓](#betterstack_source_token) |
+| [`BETTERSTACK_INGEST_HOST`](#betterstack_ingest_host) | ❌ No | - | Custom Betterstack host | [↓](#betterstack_ingest_host) |
 | [`PERIODIC_BACKFILL_INTERVAL`](#periodic_backfill_interval) | ❌ No | `5`/`60` | Polling interval (seconds) | [↓](#periodic_backfill_interval) |
 | [`BACKFILL_OVERLAP_SECONDS`](#backfill_overlap_seconds) | ❌ No | `120` | Checkpoint overlap window | [↓](#backfill_overlap_seconds) |
 | [`MAX_QUEUE_ATTEMPTS`](#max_queue_attempts) | ❌ No | `3` | Max retry attempts | [↓](#max_queue_attempts) |
@@ -116,6 +118,28 @@ These variables must be set for the connector to function:
   - `UTC`
   - `Europe/London`
 - **Note**: Affects how timestamps are displayed in Airtable
+
+#### `BETTERSTACK_SOURCE_TOKEN`
+- **Description**: Source token for Betterstack cloud logging
+- **Default**: Not set (Betterstack logging disabled)
+- **Format**: String
+- **Example**: `your_betterstack_source_token_here`
+- **How to get**: https://logs.betterstack.com/ → Settings → Sources → Create Source
+- **When to use**: 
+  - Production deployments for centralized logging
+  - When you want cloud-based log monitoring and alerts
+  - To aggregate logs from multiple instances
+- **Note**: If not set, application logs only to console and local files
+
+#### `BETTERSTACK_INGEST_HOST`
+- **Description**: Custom ingestion host for Betterstack logging
+- **Default**: Not set (uses default `in.logs.betterstack.com`)
+- **Format**: Hostname string (without protocol)
+- **Example**: `custom.logs.betterstack.com`
+- **When to use**: 
+  - When using a custom Betterstack endpoint
+  - For self-hosted Betterstack instances
+- **Note**: Only relevant if `BETTERSTACK_SOURCE_TOKEN` is set
 
 ### Webhook Settings
 
@@ -345,6 +369,9 @@ PG_DSN=postgresql://user:pass@localhost:5432/teamwork_missive
 TIMEZONE=America/New_York
 LOG_LEVEL=INFO
 PERIODIC_BACKFILL_INTERVAL=60
+
+# Betterstack logging (optional)
+BETTERSTACK_SOURCE_TOKEN=your_betterstack_token_here
 ```
 
 ### Setup with Date Filtering
