@@ -6,16 +6,18 @@ from datetime import datetime, timezone
 
 from src import settings
 from src.logging_conf import logger
-from src.queue.spool_queue import SpoolQueue
+from src.queue.postgres_queue import PostgresQueue
 from src.queue.models import QueueItem
 from src.http.security import verify_teamwork_webhook, verify_missive_webhook
+from src.db.postgres_impl import PostgresDatabase
 
 
 # Create Flask app
 app = Flask(__name__)
 
-# Create queue instance (spool-based)
-queue = SpoolQueue()
+# Create database and queue instance (PostgreSQL-backed)
+db = PostgresDatabase()
+queue = PostgresQueue(db.conn)
 
 # Periodic backfill timer
 _backfill_timer = None
@@ -25,10 +27,14 @@ _backfill_stop_event = threading.Event()
 @app.route("/health", methods=["GET"])
 def health():
     """Health check endpoint."""
+    health_metrics = queue.get_queue_health()
+    total_pending = sum(m.get('pending', 0) for m in health_metrics.values())
+    
     return jsonify({
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "queue_size": queue.size()
+        "queue_pending": total_pending,
+        "queue_details": health_metrics
     })
 
 

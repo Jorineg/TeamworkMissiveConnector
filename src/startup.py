@@ -7,7 +7,7 @@ from pyngrok import ngrok, conf
 
 from src import settings
 from src.logging_conf import logger
-from src.queue.spool_queue import SpoolQueue
+from src.queue.postgres_queue import PostgresQueue
 from src.queue.models import QueueItem
 from src.db.interface import DatabaseInterface
 from src.db.airtable_impl import AirtableDatabase
@@ -25,8 +25,8 @@ class StartupManager:
     """Manages startup operations including ngrok and backfill."""
     
     def __init__(self):
-        self.queue = SpoolQueue()
         self.db = self._create_database()
+        self.queue = PostgresQueue(self.db.conn)
         self.teamwork_client = TeamworkClient()
         self.missive_client = MissiveClient()
         self.ngrok_tunnel = None

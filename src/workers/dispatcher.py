@@ -6,7 +6,7 @@ from typing import Optional
 
 from src import settings
 from src.logging_conf import logger
-from src.queue.spool_queue import SpoolQueue
+from src.queue.postgres_queue import PostgresQueue
 from src.queue.models import QueueItem
 from src.db.interface import DatabaseInterface
 from src.db.airtable_impl import AirtableDatabase
@@ -19,8 +19,8 @@ class WorkerDispatcher:
     """Dispatcher that processes queued events."""
     
     def __init__(self):
-        self.queue = SpoolQueue()
         self.db = self._create_database()
+        self.queue = PostgresQueue(self.db.conn)
         self.teamwork_handler = TeamworkEventHandler(self.db)
         self.missive_handler = MissiveEventHandler(self.db)
         self.running = True
@@ -66,7 +66,6 @@ class WorkerDispatcher:
                 # Process the batch
                 try:
                     self._process_batch(items)
-                    self.queue.mark_batch_processed()
                     logger.info(
                         f"Successfully processed batch of {len(items)} events"
                     )
@@ -110,8 +109,13 @@ class WorkerDispatcher:
                     task = self.teamwork_handler.process_event(item.event_type, payload)
                     if task:
                         tasks.append(task)
+                    
+                    # Mark item as completed
+                    self.queue.mark_item_completed(item)
+                    
                 except Exception as e:
                     logger.error(f"Error processing teamwork item {item.external_id}: {e}", exc_info=True)
+                    self.queue.mark_item_failed(item, str(e), retry=True)
             
             # Batch upsert tasks
             if tasks:
@@ -146,8 +150,13 @@ class WorkerDispatcher:
                     item_emails = self.missive_handler.process_event(item.event_type, payload)
                     if item_emails:
                         emails.extend(item_emails)
+                    
+                    # Mark item as completed
+                    self.queue.mark_item_completed(item)
+                    
                 except Exception as e:
                     logger.error(f"Error processing missive item {item.external_id}: {e}", exc_info=True)
+                    self.queue.mark_item_failed(item, str(e), retry=True)
             
             # Batch upsert emails
             if emails:

@@ -15,7 +15,7 @@ class PostgresTeamworkOps:
             
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO tw_companies (
+                    INSERT INTO teamwork.companies (
                         id, name, address_one, address_two, city, state, zip, country_code,
                         phone, fax, email_one, email_two, email_three, website, industry_id,
                         logo_url, can_see_private, is_owner, status, private_notes,
@@ -96,11 +96,11 @@ class PostgresTeamworkOps:
                 company_id = int(user_data["companyId"])
             
             # Validate that company exists before setting foreign key
-            company_id = self._validate_fk_exists("tw_companies", company_id)
+            company_id = self._validate_fk_exists("teamwork.companies", company_id)
             
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO tw_users (
+                    INSERT INTO teamwork.users (
                         id, first_name, last_name, email, avatar_url, title, company_id,
                         company_role_id, is_admin, is_client_user, is_placeholder_resource,
                         is_service_account, deleted, can_add_projects, can_access_portfolio,
@@ -173,7 +173,7 @@ class PostgresTeamworkOps:
             
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO tw_teams (
+                    INSERT INTO teamwork.teams (
                         id, name, handle, team_logo, team_logo_color, team_logo_icon,
                         created_at, updated_at, raw_data
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -218,7 +218,7 @@ class PostgresTeamworkOps:
             
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO tw_tags (
+                    INSERT INTO teamwork.tags (
                         id, name, color, project_id, count, raw_data
                     ) VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
@@ -256,12 +256,12 @@ class PostgresTeamworkOps:
             updated_by = self._extract_id(project_data.get("updatedBy"))
             
             # Validate foreign keys exist
-            company_id = self._validate_fk_exists("tw_companies", company_id)
-            owner_id = self._validate_fk_exists("tw_users", owner_id)
+            company_id = self._validate_fk_exists("teamwork.companies", company_id)
+            owner_id = self._validate_fk_exists("teamwork.users", owner_id)
             
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO tw_projects (
+                    INSERT INTO teamwork.projects (
                         id, name, description, company_id, owner_id, category_id, status, sub_status,
                         start_date, end_date, start_at, end_at, completed_at, completed_by,
                         created_by, updated_by, is_starred, is_billable, is_sample_project,
@@ -357,11 +357,11 @@ class PostgresTeamworkOps:
             milestone_id = self._extract_id(tasklist_data.get("milestone") or tasklist_data.get("milestoneId"))
             
             # Validate foreign keys exist
-            project_id = self._validate_fk_exists("tw_projects", project_id)
+            project_id = self._validate_fk_exists("teamwork.projects", project_id)
             
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO tw_tasklists (
+                    INSERT INTO teamwork.tasklists (
                         id, name, description, project_id, milestone_id, status, display_order,
                         is_private, is_pinned, is_billable, icon, lockdown_id,
                         calculated_start_date, calculated_due_date, created_at, updated_at, raw_data
@@ -415,12 +415,12 @@ class PostgresTeamworkOps:
         try:
             with self.conn.cursor() as cur:
                 # Clear existing links
-                cur.execute("DELETE FROM task_tags WHERE task_id = %s", (task_id,))
+                cur.execute("DELETE FROM teamwork.task_tags WHERE task_id = %s", (task_id,))
                 
                 # Insert new links
                 for tag_id in tag_ids:
                     cur.execute("""
-                        INSERT INTO task_tags (task_id, tag_id)
+                        INSERT INTO teamwork.task_tags (task_id, tag_id)
                         VALUES (%s, %s)
                         ON CONFLICT DO NOTHING
                     """, (task_id, tag_id))
@@ -435,12 +435,12 @@ class PostgresTeamworkOps:
         try:
             with self.conn.cursor() as cur:
                 # Clear existing links
-                cur.execute("DELETE FROM task_assignees WHERE task_id = %s", (task_id,))
+                cur.execute("DELETE FROM teamwork.task_assignees WHERE task_id = %s", (task_id,))
                 
                 # Insert new links
                 for user_id in user_ids:
                     cur.execute("""
-                        INSERT INTO task_assignees (task_id, user_id)
+                        INSERT INTO teamwork.task_assignees (task_id, user_id)
                         VALUES (%s, %s)
                         ON CONFLICT DO NOTHING
                     """, (task_id, user_id))
@@ -455,12 +455,12 @@ class PostgresTeamworkOps:
         try:
             with self.conn.cursor() as cur:
                 # Clear existing links
-                cur.execute("DELETE FROM tw_user_teams WHERE user_id = %s", (user_id,))
+                cur.execute("DELETE FROM teamwork.user_teams WHERE user_id = %s", (user_id,))
                 
                 # Insert new links
                 for team_id in team_ids:
                     cur.execute("""
-                        INSERT INTO tw_user_teams (user_id, team_id)
+                        INSERT INTO teamwork.user_teams (user_id, team_id)
                         VALUES (%s, %s)
                         ON CONFLICT DO NOTHING
                     """, (user_id, team_id))

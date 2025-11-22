@@ -1,23 +1,25 @@
 """Teamwork webhook management via API."""
-import json
 import requests
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 from requests.auth import HTTPBasicAuth
 
 from src import settings
 from src.logging_conf import logger
+from src.db.postgres_impl import PostgresDatabase
+from src.db.postgres_webhook_config import WebhookConfigManager
 
 
 class TeamworkWebhookManager:
     """Manage Teamwork webhooks via API."""
     
-    # Store webhook IDs to delete on next run
-    WEBHOOK_IDS_FILE = settings.DATA_DIR / "teamwork_webhook_ids.json"
-    
-    def __init__(self):
+    def __init__(self, db: Optional[PostgresDatabase] = None):
         self.base_url = settings.TEAMWORK_BASE_URL
         self.api_key = settings.TEAMWORK_API_KEY
         self.auth = HTTPBasicAuth(self.api_key, "")
+        
+        # Database connection for webhook config
+        self.db = db or PostgresDatabase()
+        self.webhook_mgr = WebhookConfigManager(self.db.conn)
         
         # Events we want to subscribe to
         self.desired_events = [
@@ -140,22 +142,25 @@ class TeamworkWebhookManager:
             return False
     
     def _load_webhook_ids(self) -> List[str]:
-        """Load the stored webhook IDs from file."""
+        """Load the stored webhook IDs from database."""
         try:
-            if self.WEBHOOK_IDS_FILE.exists():
-                with open(self.WEBHOOK_IDS_FILE, "r") as f:
-                    data = json.load(f)
-                    return data.get("webhook_ids", [])
+            config = self.webhook_mgr.get_webhook_ids('teamwork')
+            if config and isinstance(config, dict):
+                return config.get("webhook_ids", [])
+            elif config and isinstance(config, list):
+                return config
         except Exception as e:
             logger.debug(f"Could not load webhook IDs: {e}")
         return []
     
     def _save_webhook_ids(self, webhook_ids: List[str]) -> None:
-        """Save the webhook IDs to file."""
+        """Save the webhook IDs to database."""
         try:
-            self.WEBHOOK_IDS_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.WEBHOOK_IDS_FILE, "w") as f:
-                json.dump({"webhook_ids": webhook_ids}, f)
+            self.webhook_mgr.save_webhook_ids(
+                'teamwork', 
+                {"webhook_ids": webhook_ids},
+                webhook_url=None
+            )
         except Exception as e:
             logger.warning(f"Could not save webhook IDs: {e}")
     

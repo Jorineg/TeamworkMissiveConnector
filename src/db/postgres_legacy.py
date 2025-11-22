@@ -54,20 +54,22 @@ class PostgresLegacyOps:
                     project_id = self._extract_id(raw.get("project") or task.project_id)
                     tasklist_id = self._extract_id(raw.get("tasklist") or raw.get("tasklistId") or task.tasklist_id)
                     
-                    # Extract parent task ID (must be a string task_id)
+                    # Extract parent task ID (INTEGER in new schema)
                     parent_task_id = self._extract_id(raw.get("parentTask"))
-                    parent_task = str(parent_task_id) if parent_task_id is not None else None
+                    
+                    # Convert task_id (string) to integer for new schema
+                    task_id_int = int(task.task_id)
                     
                     task_data.append((
-                        task.task_id,
+                        task_id_int,
+                        project_id,
+                        tasklist_id,
                         raw.get("name"),
                         raw.get("description"),
                         raw.get("status"),
                         raw.get("priority"),
                         int(raw.get("progress")) if raw.get("progress") is not None else None,
-                        project_id,
-                        tasklist_id,
-                        parent_task,
+                        parent_task_id,
                         self._parse_dt(raw.get("startDate")),
                         self._parse_dt(raw.get("dueDate")),
                         int(raw.get("estimateMinutes")) if raw.get("estimateMinutes") is not None else None,
@@ -83,24 +85,22 @@ class PostgresLegacyOps:
                 
                 # Batch upsert tasks
                 execute_batch(cur, """
-                    INSERT INTO tasks (
-                        task_id, name, description, status, priority, progress,
-                        project_id, tasklist_id, parent_task,
-                        start_date, due_date, estimate_minutes, accumulated_estimated_minutes,
-                        created_at, created_by_id,
-                        updated_at, updated_by_id,
+                    INSERT INTO teamwork.tasks (
+                        id, project_id, tasklist_id, name, description, status, priority, progress,
+                        parent_task, start_date, due_date, estimate_minutes, accumulated_estimated_minutes,
+                        created_at, created_by_id, updated_at, updated_by_id,
                         deleted_at, source_links, raw_data
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
-                    ON CONFLICT (task_id) DO UPDATE SET
+                    ON CONFLICT (id) DO UPDATE SET
+                        project_id = EXCLUDED.project_id,
+                        tasklist_id = EXCLUDED.tasklist_id,
                         name = EXCLUDED.name,
                         description = EXCLUDED.description,
                         status = EXCLUDED.status,
                         priority = EXCLUDED.priority,
                         progress = EXCLUDED.progress,
-                        project_id = EXCLUDED.project_id,
-                        tasklist_id = EXCLUDED.tasklist_id,
                         parent_task = EXCLUDED.parent_task,
                         start_date = EXCLUDED.start_date,
                         due_date = EXCLUDED.due_date,
@@ -136,12 +136,15 @@ class PostgresLegacyOps:
     def mark_task_deleted(self, task_id: str) -> None:
         """Mark a task as deleted."""
         try:
+            # Convert task_id to integer for new schema
+            task_id_int = int(task_id)
+            
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    UPDATE tasks
+                    UPDATE teamwork.tasks
                     SET deleted_at = NOW(), db_updated_at = NOW()
-                    WHERE task_id = %s
-                """, (task_id,))
+                    WHERE id = %s
+                """, (task_id_int,))
                 self.conn.commit()
                 logger.info(f"Marked task {task_id} as deleted")
         except Exception as e:
@@ -155,7 +158,7 @@ class PostgresLegacyOps:
             with self.conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
                     SELECT source, last_event_time, last_cursor
-                    FROM checkpoints
+                    FROM teamworkmissiveconnector.checkpoints
                     WHERE source = %s
                 """, (source,))
                 row = cur.fetchone()
@@ -174,7 +177,7 @@ class PostgresLegacyOps:
         try:
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO checkpoints (source, last_event_time, last_cursor, updated_at)
+                    INSERT INTO teamworkmissiveconnector.checkpoints (source, last_event_time, last_cursor, updated_at)
                     VALUES (%s, %s, %s, NOW())
                     ON CONFLICT (source) DO UPDATE SET
                         last_event_time = EXCLUDED.last_event_time,

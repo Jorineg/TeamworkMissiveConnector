@@ -91,20 +91,20 @@ class PostgresConnection:
         try:
             with self.conn.cursor() as cur:
                 # Try to find existing contact
-                cur.execute("SELECT id FROM m_contacts WHERE email = %s LIMIT 1", (email,))
+                cur.execute("SELECT id FROM missive.contacts WHERE email = %s LIMIT 1", (email,))
                 row = cur.fetchone()
                 if row:
                     # Update name if provided and different
                     if name:
                         cur.execute("""
-                            UPDATE m_contacts SET name = %s, db_updated_at = NOW()
+                            UPDATE missive.contacts SET name = %s, db_updated_at = NOW()
                             WHERE id = %s AND (name IS NULL OR name != %s)
                         """, (name, row[0], name))
                     return row[0]
                 
                 # Create new contact
                 cur.execute("""
-                    INSERT INTO m_contacts (email, name)
+                    INSERT INTO missive.contacts (email, name)
                     VALUES (%s, %s)
                     RETURNING id
                 """, (email, name))

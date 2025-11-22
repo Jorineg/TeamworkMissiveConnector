@@ -1,7 +1,6 @@
 """PostgreSQL implementation of the database interface."""
 from src.db.interface import DatabaseInterface
 from src.db.postgres_connection import PostgresConnection
-from src.db.postgres_schema import PostgresSchema
 from src.db.postgres_teamwork import PostgresTeamworkOps
 from src.db.postgres_missive import PostgresMissiveOps
 from src.db.postgres_legacy import PostgresLegacyOps
@@ -23,15 +22,14 @@ class PostgresDatabase(
     - PostgresMissiveOps: Missive entity operations  
     - PostgresLegacyOps: Legacy email/task/checkpoint operations
     - DatabaseInterface: Abstract interface definition
+    
+    Note: Database schema is managed in a separate repository (ibhelmDB).
+    This code assumes all tables, columns, and views already exist.
     """
     
     def __init__(self):
-        """Initialize database connection and ensure tables exist."""
+        """Initialize database connection."""
         # Initialize the connection (from PostgresConnection)
         PostgresConnection.__init__(self)
         
-        # Ensure all tables are created
-        schema = PostgresSchema()
-        schema.ensure_tables(self.conn)
-        
-        logger.info("PostgreSQL database initialized successfully")
+        logger.info("PostgreSQL database connection initialized successfully")

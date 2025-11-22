@@ -1,26 +1,27 @@
 """Missive webhook management via API."""
-import json
 import requests
-from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional
 
 from src import settings
 from src.logging_conf import logger
+from src.db.postgres_impl import PostgresDatabase
+from src.db.postgres_webhook_config import WebhookConfigManager
 
 
 class MissiveWebhookManager:
     """Manage Missive webhooks via API."""
     
-    # Store webhook ID to delete on next run
-    WEBHOOK_ID_FILE = settings.DATA_DIR / "missive_webhook_id.json"
-    
-    def __init__(self):
+    def __init__(self, db: Optional[PostgresDatabase] = None):
         self.api_token = settings.MISSIVE_API_TOKEN
         self.base_url = "https://public.missiveapp.com/v1"
         self.headers = {
             "Authorization": f"Bearer {self.api_token}",
             "Content-Type": "application/json"
         }
+        
+        # Database connection for webhook config
+        self.db = db or PostgresDatabase()
+        self.webhook_mgr = WebhookConfigManager(self.db.conn)
         
         # Events we want to subscribe to
         self.desired_events = [
@@ -118,22 +119,25 @@ class MissiveWebhookManager:
             return False
     
     def _load_webhook_id(self) -> Optional[str]:
-        """Load the stored webhook ID from file."""
+        """Load the stored webhook ID from database."""
         try:
-            if self.WEBHOOK_ID_FILE.exists():
-                with open(self.WEBHOOK_ID_FILE, "r") as f:
-                    data = json.load(f)
-                    return data.get("webhook_id")
+            config = self.webhook_mgr.get_webhook_ids('missive')
+            if config and isinstance(config, dict):
+                return config.get("webhook_id")
+            elif config and isinstance(config, str):
+                return config
         except Exception as e:
             logger.debug(f"Could not load webhook ID: {e}")
         return None
     
     def _save_webhook_id(self, webhook_id: str) -> None:
-        """Save the webhook ID to file."""
+        """Save the webhook ID to database."""
         try:
-            self.WEBHOOK_ID_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.WEBHOOK_ID_FILE, "w") as f:
-                json.dump({"webhook_id": webhook_id}, f)
+            self.webhook_mgr.save_webhook_ids(
+                'missive',
+                {"webhook_id": webhook_id},
+                webhook_url=None
+            )
         except Exception as e:
             logger.warning(f"Could not save webhook ID: {e}")
 

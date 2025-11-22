@@ -25,7 +25,7 @@ class PostgresMissiveOps:
             
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO m_users (id, name, email, contact_id, raw_data)
+                    INSERT INTO missive.users (id, name, email, contact_id, raw_data)
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
                         name = EXCLUDED.name,
@@ -59,7 +59,7 @@ class PostgresMissiveOps:
             
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO m_teams (id, name, organization_id, raw_data)
+                    INSERT INTO missive.teams (id, name, organization_id, raw_data)
                     VALUES (%s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
                         name = EXCLUDED.name,
@@ -87,7 +87,7 @@ class PostgresMissiveOps:
             
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO m_shared_labels (id, name, raw_data)
+                    INSERT INTO missive.shared_labels (id, name, raw_data)
                     VALUES (%s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
                         name = EXCLUDED.name,
@@ -133,7 +133,7 @@ class PostgresMissiveOps:
             with self.conn.cursor() as cur:
                 # Upsert conversation
                 cur.execute("""
-                    INSERT INTO m_conversations (
+                    INSERT INTO missive.conversations (
                         id, subject, latest_message_subject, team_id, organization_id, color,
                         attachments_count, messages_count, drafts_count, send_later_messages_count,
                         tasks_count, completed_tasks_count, last_activity_at, web_url, app_url, raw_data
@@ -179,7 +179,7 @@ class PostgresMissiveOps:
                 # Handle users
                 if conversation_data.get("users"):
                     # Clear existing users
-                    cur.execute("DELETE FROM m_conversation_users WHERE conversation_id = %s", (conversation_id,))
+                    cur.execute("DELETE FROM missive.conversation_users WHERE conversation_id = %s", (conversation_id,))
                     
                     for user in conversation_data["users"]:
                         user_id = user.get("id")
@@ -189,7 +189,7 @@ class PostgresMissiveOps:
                             
                             # Insert into junction table
                             cur.execute("""
-                                INSERT INTO m_conversation_users (
+                                INSERT INTO missive.conversation_users (
                                     conversation_id, user_id, unassigned, closed, archived,
                                     trashed, junked, assigned, flagged, snoozed
                                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -217,7 +217,7 @@ class PostgresMissiveOps:
                 # Handle assignees
                 if conversation_data.get("assignees"):
                     # Clear existing assignees
-                    cur.execute("DELETE FROM m_conversation_assignees WHERE conversation_id = %s", (conversation_id,))
+                    cur.execute("DELETE FROM missive.conversation_assignees WHERE conversation_id = %s", (conversation_id,))
                     
                     for assignee in conversation_data["assignees"]:
                         assignee_id = assignee.get("id")
@@ -227,7 +227,7 @@ class PostgresMissiveOps:
                             
                             # Insert into junction table
                             cur.execute("""
-                                INSERT INTO m_conversation_assignees (conversation_id, user_id)
+                                INSERT INTO missive.conversation_assignees (conversation_id, user_id)
                                 VALUES (%s, %s)
                                 ON CONFLICT DO NOTHING
                             """, (conversation_id, assignee_id))
@@ -235,7 +235,7 @@ class PostgresMissiveOps:
                 # Handle shared labels
                 if conversation_data.get("shared_labels"):
                     # Clear existing labels
-                    cur.execute("DELETE FROM m_conversation_labels WHERE conversation_id = %s", (conversation_id,))
+                    cur.execute("DELETE FROM missive.conversation_labels WHERE conversation_id = %s", (conversation_id,))
                     
                     for label in conversation_data["shared_labels"]:
                         label_id = label.get("id")
@@ -245,7 +245,7 @@ class PostgresMissiveOps:
                             
                             # Insert into junction table
                             cur.execute("""
-                                INSERT INTO m_conversation_labels (conversation_id, label_id)
+                                INSERT INTO missive.conversation_labels (conversation_id, label_id)
                                 VALUES (%s, %s)
                                 ON CONFLICT DO NOTHING
                             """, (conversation_id, label_id))
@@ -253,7 +253,7 @@ class PostgresMissiveOps:
                 # Handle authors
                 if conversation_data.get("authors"):
                     # Clear existing authors
-                    cur.execute("DELETE FROM m_conversation_authors WHERE conversation_id = %s", (conversation_id,))
+                    cur.execute("DELETE FROM missive.conversation_authors WHERE conversation_id = %s", (conversation_id,))
                     
                     for author in conversation_data["authors"]:
                         # Get or create contact for this author
@@ -261,7 +261,7 @@ class PostgresMissiveOps:
                         
                         if contact_id:
                             cur.execute("""
-                                INSERT INTO m_conversation_authors (conversation_id, contact_id)
+                                INSERT INTO missive.conversation_authors (conversation_id, contact_id)
                                 VALUES (%s, %s)
                             """, (conversation_id, contact_id))
                 
@@ -294,7 +294,7 @@ class PostgresMissiveOps:
             with self.conn.cursor() as cur:
                 # Upsert message
                 cur.execute("""
-                    INSERT INTO m_messages (
+                    INSERT INTO missive.messages (
                         id, conversation_id, subject, preview, type, email_message_id, body,
                         from_contact_id, delivered_at, created_at, updated_at, raw_data
                     ) VALUES (
@@ -328,7 +328,7 @@ class PostgresMissiveOps:
                 ))
                 
                 # Clear existing recipients
-                cur.execute("DELETE FROM m_message_recipients WHERE message_id = %s", (message_id,))
+                cur.execute("DELETE FROM missive.message_recipients WHERE message_id = %s", (message_id,))
                 
                 # Handle to_fields
                 for recipient in message_data.get("to_fields", []):
@@ -344,7 +344,7 @@ class PostgresMissiveOps:
                     contact_id = self._get_or_create_contact(recipient.get("address"), recipient.get("name"))
                     if contact_id:
                         cur.execute("""
-                            INSERT INTO m_message_recipients (message_id, recipient_type, contact_id)
+                            INSERT INTO missive.message_recipients (message_id, recipient_type, contact_id)
                             VALUES (%s, %s, %s)
                         """, (message_id, "cc", contact_id))
                 
@@ -353,20 +353,20 @@ class PostgresMissiveOps:
                     contact_id = self._get_or_create_contact(recipient.get("address"), recipient.get("name"))
                     if contact_id:
                         cur.execute("""
-                            INSERT INTO m_message_recipients (message_id, recipient_type, contact_id)
+                            INSERT INTO missive.message_recipients (message_id, recipient_type, contact_id)
                             VALUES (%s, %s, %s)
                         """, (message_id, "bcc", contact_id))
                 
                 # Handle attachments
                 if message_data.get("attachments"):
                     # Clear existing attachments
-                    cur.execute("DELETE FROM m_attachments WHERE message_id = %s", (message_id,))
+                    cur.execute("DELETE FROM missive.attachments WHERE message_id = %s", (message_id,))
                     
                     for attachment in message_data["attachments"]:
                         attachment_id = attachment.get("id")
                         if attachment_id:
                             cur.execute("""
-                                INSERT INTO m_attachments (
+                                INSERT INTO missive.attachments (
                                     id, message_id, filename, extension, url, media_type,
                                     sub_type, size, width, height, raw_data
                                 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
