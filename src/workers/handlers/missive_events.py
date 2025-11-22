@@ -22,6 +22,7 @@ class MissiveEventHandler:
     def process_event(self, event_type: str, payload: Dict[str, Any]) -> Optional[List[Email]]:
         """
         Process a Missive event and return Email objects.
+        Also upserts conversations and messages to relational tables if available.
         
         Args:
             event_type: Type of event (e.g., "conversation.created", "message.received")
@@ -47,8 +48,23 @@ class MissiveEventHandler:
                     self.db.mark_email_deleted(msg_id)
             return None
         
-        # Fetch conversation data to get labels (labels are on conversation, not messages)
-        conversation_labels = self._fetch_conversation_labels(conversation_id)
+        # Fetch full conversation data
+        conversation = self.client.get_conversation(conversation_id)
+        if not conversation:
+            logger.warning(f"Could not fetch conversation {conversation_id}")
+            return None
+        
+        # Upsert conversation to relational structure if available
+        if hasattr(self.db, 'upsert_m_conversation'):
+            try:
+                self.db.upsert_m_conversation(conversation)
+            except Exception as e:
+                logger.error(f"Failed to upsert conversation {conversation_id}: {e}", exc_info=True)
+        
+        # Get conversation labels for Email objects
+        conversation_labels = []
+        if conversation.get("shared_label_names"):
+            conversation_labels = [label.strip() for label in conversation["shared_label_names"].split(",") if label.strip()]
         
         # Always fetch fresh messages from API to ensure consistency
         messages = self.client.get_conversation_messages(conversation_id)
@@ -70,6 +86,14 @@ class MissiveEventHandler:
                     logger.info(f"Message {message_id} filtered: received before MISSIVE_PROCESS_AFTER threshold")
                     continue
                 
+                # Upsert message to relational structure if available
+                if hasattr(self.db, 'upsert_m_message'):
+                    try:
+                        self.db.upsert_m_message(message_data, conversation_id)
+                    except Exception as e:
+                        logger.error(f"Failed to upsert message {message_id}: {e}", exc_info=True)
+                
+                # Create Email object for legacy support
                 email = self._parse_message(message_data, conversation_id, conversation_labels)
                 emails.append(email)
             except Exception as e:

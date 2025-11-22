@@ -116,6 +116,22 @@ class WorkerDispatcher:
             # Batch upsert tasks
             if tasks:
                 self.db.upsert_tasks_batch(tasks)
+                
+                # Link tags and assignees if using relational structure
+                if hasattr(self.db, 'link_task_tags'):
+                    for task in tasks:
+                        try:
+                            # Link tags if available
+                            tag_ids = task.raw.get("_tag_ids_to_link", [])
+                            if tag_ids:
+                                self.db.link_task_tags(task.task_id, tag_ids)
+                            
+                            # Link assignees if available
+                            assignee_user_ids = task.raw.get("_assignee_user_ids_to_link", [])
+                            if assignee_user_ids:
+                                self.db.link_task_assignees(task.task_id, assignee_user_ids)
+                        except Exception as e:
+                            logger.error(f"Error linking task {task.task_id} relationships: {e}", exc_info=True)
         
         # Process Missive items
         if missive_items:

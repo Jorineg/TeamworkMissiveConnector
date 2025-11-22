@@ -1,0 +1,19 @@
+- prefer a solutin to a bug that removes code over one that adds code.
+- if you want to see current database schema and views, use browser tool and query: https://raw.githubusercontent.com/Jorineg/ibhelmDB/main/supabase/migrations/...
+Directory structure:
+└── jorineg-ibhelmdb/
+    └── supabase/
+        ├── config.toml
+        └── migrations/
+            ├── README.md
+            ├── 001_extensions.sql
+            ├── 002_types_and_enums.sql
+            ├── 003_teamwork_schema.sql
+            ├── 004_missive_schema.sql
+            ├── 005_ibhelm_schema.sql
+            ├── 006_indexes.sql
+            ├── 007_functions_and_triggers.sql
+            └── 008_views.sql
+
+- when it makes sense to create a new db view or change the existing one, tell me. Clean architecture is key.
+- update existing documentation files but do not create new documentation files unless explicitly asked

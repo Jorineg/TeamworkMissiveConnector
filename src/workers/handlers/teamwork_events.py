@@ -56,6 +56,10 @@ class TeamworkEventHandler:
             logger.info(f"Task {task_id} filtered: created before TEAMWORK_PROCESS_AFTER threshold")
             return None
         
+        # Upsert all related entities from included resources (in dependency order)
+        # This ensures foreign key constraints are satisfied when upserting task
+        self._upsert_included_entities(included, task_data)
+        
         # Convert to Task model using included data
         task = self._parse_task(task_data, included)
         return task
@@ -325,6 +329,128 @@ class TeamworkEventHandler:
             return full_name or user.get("email", user_id)
         
         return user_id
+    
+    def _upsert_included_entities(self, included: Dict[str, Any], task_data: Dict[str, Any]) -> None:
+        """
+        Upsert all related entities from included resources in dependency order.
+        
+        Args:
+            included: Included resources from API response
+            task_data: Task data (to extract specific relationships)
+        """
+        # Check if db has the new relational methods
+        if not hasattr(self.db, 'upsert_tw_company'):
+            logger.debug("Database doesn't support relational structure, skipping entity upserts")
+            return
+        
+        # 1. Upsert companies (no dependencies)
+        if "companies" in included:
+            for company_id, company_data in included["companies"].items():
+                try:
+                    self.db.upsert_tw_company(company_data)
+                except Exception as e:
+                    logger.error(f"Failed to upsert company {company_id}: {e}")
+        
+        # 2. Upsert users (depends on companies)
+        if "users" in included:
+            for user_id, user_data in included["users"].items():
+                try:
+                    self.db.upsert_tw_user(user_data)
+                except Exception as e:
+                    logger.error(f"Failed to upsert user {user_id}: {e}")
+        
+        # 3. Upsert teams (no dependencies)
+        if "teams" in included:
+            for team_id, team_data in included["teams"].items():
+                try:
+                    self.db.upsert_tw_team(team_data)
+                    
+                    # Link users to teams if available
+                    # Note: In Teamwork API, team membership is usually in user.teams
+                    # We'll handle this when processing users
+                except Exception as e:
+                    logger.error(f"Failed to upsert team {team_id}: {e}")
+        
+        # Link users to their teams
+        if "users" in included:
+            for user_id, user_data in included["users"].items():
+                try:
+                    # Extract team IDs from user data
+                    team_refs = user_data.get("teams", [])
+                    team_ids = []
+                    for team_ref in team_refs:
+                        if isinstance(team_ref, dict):
+                            tid = team_ref.get("id")
+                            if tid:
+                                team_ids.append(int(tid))
+                        elif team_ref:
+                            team_ids.append(int(team_ref))
+                    
+                    if team_ids:
+                        self.db.link_user_teams(int(user_id), team_ids)
+                except Exception as e:
+                    logger.error(f"Failed to link user {user_id} to teams: {e}")
+        
+        # 4. Upsert tags (may have project dependency)
+        if "tags" in included:
+            for tag_id, tag_data in included["tags"].items():
+                try:
+                    self.db.upsert_tw_tag(tag_data)
+                except Exception as e:
+                    logger.error(f"Failed to upsert tag {tag_id}: {e}")
+        
+        # 5. Upsert projects (depends on companies and users)
+        if "projects" in included:
+            for project_id, project_data in included["projects"].items():
+                try:
+                    self.db.upsert_tw_project(project_data)
+                except Exception as e:
+                    logger.error(f"Failed to upsert project {project_id}: {e}")
+        
+        # 6. Upsert tasklists (depends on projects)
+        if "tasklists" in included:
+            for tasklist_id, tasklist_data in included["tasklists"].items():
+                try:
+                    self.db.upsert_tw_tasklist(tasklist_data)
+                except Exception as e:
+                    logger.error(f"Failed to upsert tasklist {tasklist_id}: {e}")
+        
+        # 7. Link task to tags (will be done after task is upserted)
+        # Extract tag IDs from task data
+        tag_refs = task_data.get("tags") or []
+        tag_ids = []
+        for tag_ref in tag_refs:
+            if isinstance(tag_ref, dict):
+                tid = tag_ref.get("id")
+                if tid:
+                    tag_ids.append(int(tid))
+            elif tag_ref:
+                try:
+                    tag_ids.append(int(tag_ref))
+                except (ValueError, TypeError):
+                    pass
+        
+        # Store for later linking (after task upsert)
+        if tag_ids and hasattr(task_data, '__setitem__'):
+            task_data["_tag_ids_to_link"] = tag_ids
+        
+        # 8. Link task to assignees (will be done after task is upserted)
+        # Extract assignee user IDs from task data
+        assignee_refs = task_data.get("assignees") or []
+        assignee_user_ids = []
+        for assignee_ref in assignee_refs:
+            if isinstance(assignee_ref, dict):
+                if assignee_ref.get("type") == "users":
+                    uid = assignee_ref.get("id")
+                    if uid:
+                        try:
+                            assignee_user_ids.append(int(uid))
+                        except (ValueError, TypeError):
+                            pass
+        
+        # Store for later linking (after task upsert)
+        if assignee_user_ids and hasattr(task_data, '__setitem__'):
+            task_data["_assignee_user_ids_to_link"] = assignee_user_ids
     
     def _should_filter_by_date(self, task_data: Dict[str, Any]) -> bool:
         """
