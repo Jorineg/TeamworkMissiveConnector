@@ -1,5 +1,6 @@
 # Environment
 .env
+.env.old
 venv/
 env/
 __pycache__/
