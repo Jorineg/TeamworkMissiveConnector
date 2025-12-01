@@ -33,14 +33,12 @@ class PostgresQueue:
                 cur.execute("""
                     INSERT INTO teamworkmissiveconnector.queue_items (
                         source, event_type, external_id, payload, status, created_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, NOW())
                 """, (
                     item.source,
                     item.event_type,
                     item.external_id,
-                    item.payload,  # Will be converted to JSONB
-                    'pending',
-                    item.created_at or datetime.utcnow()
+                    item.payload  # Will be converted to JSONB
                 ))
                 self.conn.commit()
                 logger.debug(f"Enqueued {item.source}/{item.event_type}/{item.external_id}")
@@ -65,14 +63,12 @@ class PostgresQueue:
                     cur.execute("""
                         INSERT INTO teamworkmissiveconnector.queue_items (
                             source, event_type, external_id, payload, status, created_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, NOW())
                     """, (
                         item.source,
                         item.event_type,
                         item.external_id,
-                        item.payload,
-                        'pending',
-                        item.created_at or datetime.utcnow()
+                        item.payload
                     ))
                 self.conn.commit()
                 logger.info(f"Enqueued batch of {len(items)} items")
@@ -105,12 +101,11 @@ class PostgresQueue:
                 
                 items = []
                 for row in rows:
-                    item = QueueItem(
+                    item = QueueItem.create(
                         source=row[1],
                         event_type=row[2],
                         external_id=row[3],
-                        payload=row[4] or {},
-                        created_at=datetime.utcnow()
+                        payload=row[4] or {}
                     )
                     # Store database ID for later use
                     item._db_id = row[0]

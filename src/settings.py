@@ -14,8 +14,7 @@ LOGS_DIR = BASE_DIR / "logs"
 # Ensure directories exist
 DATA_DIR.mkdir(exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)
-(DATA_DIR / "queue").mkdir(exist_ok=True)
-(DATA_DIR / "checkpoints").mkdir(exist_ok=True)
+# Note: queue and checkpoints are now in PostgreSQL, no directories needed
 
 # Application settings
 APP_PORT = int(os.getenv("APP_PORT", "5000"))
@@ -63,21 +62,15 @@ PERIODIC_BACKFILL_INTERVAL = int(os.getenv("PERIODIC_BACKFILL_INTERVAL", _defaul
 # PostgreSQL settings
 PG_DSN = os.getenv("PG_DSN")
 
-# Queue settings
-QUEUE_DIR = DATA_DIR / "queue"
-CHECKPOINT_DIR = DATA_DIR / "checkpoints"
+# Queue settings (now in PostgreSQL for postgres backend)
 MAX_QUEUE_ATTEMPTS = int(os.getenv("MAX_QUEUE_ATTEMPTS", "3"))
 BACKFILL_OVERLAP_SECONDS = int(os.getenv("BACKFILL_OVERLAP_SECONDS", "120"))
 
-# File paths
-QUEUE_INBOX_FILE = QUEUE_DIR / "inbox.jsonl"
-QUEUE_OFFSET_FILE = QUEUE_DIR / "offset.json"
-QUEUE_DLQ_FILE = QUEUE_DIR / "dlq.jsonl"
-
-# Spool queue settings
-SPOOL_BASE_DIR = QUEUE_DIR / "spool"
-SPOOL_TEAMWORK_DIR = SPOOL_BASE_DIR / "teamwork"
-SPOOL_MISSIVE_DIR = SPOOL_BASE_DIR / "missive"
+# Legacy checkpoint directory for Airtable backend only
+# (PostgreSQL uses teamworkmissiveconnector.checkpoints table)
+CHECKPOINT_DIR = DATA_DIR / "checkpoints"
+if DB_BACKEND == "airtable":
+    CHECKPOINT_DIR.mkdir(exist_ok=True)
 SPOOL_RETRY_SECONDS = int(os.getenv("SPOOL_RETRY_SECONDS", "60"))
 
 
