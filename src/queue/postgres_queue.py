@@ -3,6 +3,8 @@ import uuid
 from typing import List, Optional
 from datetime import datetime
 
+from psycopg2.extras import Json
+
 from src.queue.models import QueueItem
 from src.logging_conf import logger
 
@@ -38,7 +40,8 @@ class PostgresQueue:
                     item.source,
                     item.event_type,
                     item.external_id,
-                    item.payload  # Will be converted to JSONB
+                    Json(item.payload),
+                    'pending'
                 ))
                 self.conn.commit()
                 logger.debug(f"Enqueued {item.source}/{item.event_type}/{item.external_id}")
@@ -68,7 +71,8 @@ class PostgresQueue:
                         item.source,
                         item.event_type,
                         item.external_id,
-                        item.payload
+                        Json(item.payload),
+                        'pending'
                     ))
                 self.conn.commit()
                 logger.info(f"Enqueued batch of {len(items)} items")

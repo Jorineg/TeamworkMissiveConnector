@@ -1,6 +1,6 @@
 """Missive webhook management via API."""
 import requests
-from typing import Optional
+from typing import Dict, Optional
 
 from src import settings
 from src.logging_conf import logger
@@ -31,8 +31,8 @@ class MissiveWebhookManager:
     
     def setup_webhook(self, webhook_url: str) -> bool:
         """
-        Set up webhook for Missive.
-        Deletes old webhook (if exists) and creates a new one.
+        Set up webhooks for Missive.
+        Deletes old webhooks (if exists) and creates new ones for all desired events.
         
         Args:
             webhook_url: The URL to send webhooks to (e.g., ngrok URL)
@@ -41,27 +41,36 @@ class MissiveWebhookManager:
             True if successful, False otherwise
         """
         try:
-            logger.info(f"Setting up Missive webhook to: {webhook_url}")
+            logger.info(f"Setting up Missive webhooks to: {webhook_url}")
             
-            # Delete old webhook if exists
-            old_webhook_id = self._load_webhook_id()
-            if old_webhook_id:
-                logger.info(f"Deleting old Missive webhook: {old_webhook_id}")
-                self._delete_webhook(old_webhook_id)
+            # Delete old webhooks if they exist
+            old_webhook_ids = self._load_webhook_ids()
+            for event_type, webhook_id in old_webhook_ids.items():
+                if webhook_id:
+                    logger.info(f"Deleting old Missive webhook for {event_type}: {webhook_id}")
+                    self._delete_webhook(webhook_id)
             
-            # Create new webhook for incoming emails
-            webhook_id = self._create_webhook(webhook_url, "incoming_email")
+            # Create webhooks for all desired events
+            created_webhooks = {}
+            all_success = True
             
-            if webhook_id:
-                self._save_webhook_id(webhook_id)
-                logger.info("✓ Missive webhook configured successfully")
-                return True
-            else:
-                logger.error("Failed to create Missive webhook")
-                return False
+            for event_type in self.desired_events:
+                webhook_id = self._create_webhook(webhook_url, event_type)
+                if webhook_id:
+                    created_webhooks[event_type] = webhook_id
+                else:
+                    logger.error(f"Failed to create Missive webhook for {event_type}")
+                    all_success = False
+            
+            # Save all webhook IDs
+            if created_webhooks:
+                self._save_webhook_ids(created_webhooks)
+                logger.info(f"✓ Missive webhooks configured successfully for: {list(created_webhooks.keys())}")
+            
+            return all_success
         
         except Exception as e:
-            logger.error(f"Failed to setup Missive webhook: {e}", exc_info=True)
+            logger.error(f"Failed to setup Missive webhooks: {e}", exc_info=True)
             return False
     
     def _create_webhook(self, url: str, event_type: str) -> Optional[str]:
@@ -119,25 +128,44 @@ class MissiveWebhookManager:
             return False
     
     def _load_webhook_id(self) -> Optional[str]:
-        """Load the stored webhook ID from database."""
+        """Load the stored webhook ID from database (legacy - single webhook)."""
+        ids = self._load_webhook_ids()
+        # Return first available webhook ID for backwards compatibility
+        for webhook_id in ids.values():
+            if webhook_id:
+                return webhook_id
+        return None
+    
+    def _load_webhook_ids(self) -> Dict[str, str]:
+        """Load all stored webhook IDs from database."""
         try:
             config = self.webhook_mgr.get_webhook_ids('missive')
             if config and isinstance(config, dict):
-                return config.get("webhook_id")
+                # New format: {event_type: webhook_id, ...}
+                if any(k in config for k in self.desired_events):
+                    return config
+                # Legacy format: {"webhook_id": "..."}
+                if "webhook_id" in config:
+                    return {"incoming_email": config["webhook_id"]}
             elif config and isinstance(config, str):
-                return config
+                # Very old format: just the ID string
+                return {"incoming_email": config}
         except Exception as e:
-            logger.debug(f"Could not load webhook ID: {e}")
-        return None
+            logger.debug(f"Could not load webhook IDs: {e}")
+        return {}
     
     def _save_webhook_id(self, webhook_id: str) -> None:
-        """Save the webhook ID to database."""
+        """Save the webhook ID to database (legacy - single webhook)."""
+        self._save_webhook_ids({"incoming_email": webhook_id})
+    
+    def _save_webhook_ids(self, webhook_ids: Dict[str, str]) -> None:
+        """Save all webhook IDs to database."""
         try:
             self.webhook_mgr.save_webhook_ids(
                 'missive',
-                {"webhook_id": webhook_id},
+                webhook_ids,
                 webhook_url=None
             )
         except Exception as e:
-            logger.warning(f"Could not save webhook ID: {e}")
+            logger.warning(f"Could not save webhook IDs: {e}")
 

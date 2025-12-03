@@ -22,10 +22,10 @@ class MissiveEventHandler:
     def process_event(self, event_type: str, payload: Dict[str, Any]) -> Optional[List[Email]]:
         """
         Process a Missive event and return Email objects.
-        Also upserts conversations and messages to relational tables if available.
+        Also upserts conversations, messages, and comments to relational tables if available.
         
         Args:
-            event_type: Type of event (e.g., "conversation.created", "message.received")
+            event_type: Type of event (e.g., "conversation.created", "message.received", "new_comment")
             payload: Event payload
         
         Returns:
@@ -60,6 +60,11 @@ class MissiveEventHandler:
                 self.db.upsert_m_conversation(conversation)
             except Exception as e:
                 logger.error(f"Failed to upsert conversation {conversation_id}: {e}", exc_info=True)
+        
+        # Handle comment events - fetch and store all comments for the conversation
+        if event_type == "new_comment" or "comment" in event_type.lower():
+            self._process_conversation_comments(conversation_id)
+            # Comments don't produce Email objects, but we still process messages below
         
         # Get conversation labels for Email objects
         conversation_labels = []
@@ -100,6 +105,31 @@ class MissiveEventHandler:
                 logger.error(f"Error processing message: {e}", exc_info=True)
         
         return emails if emails else None
+    
+    def _process_conversation_comments(self, conversation_id: str) -> None:
+        """
+        Fetch and store all comments for a conversation.
+        
+        Args:
+            conversation_id: Conversation ID
+        """
+        if not hasattr(self.db, 'upsert_m_comment'):
+            logger.debug("Database does not support comment upsert, skipping comments")
+            return
+        
+        try:
+            comments = self.client.get_all_conversation_comments(conversation_id)
+            logger.info(f"Fetched {len(comments)} comments for conversation {conversation_id}")
+            
+            for comment_data in comments:
+                try:
+                    self.db.upsert_m_comment(comment_data, conversation_id)
+                except Exception as e:
+                    comment_id = comment_data.get("id", "unknown")
+                    logger.error(f"Failed to upsert comment {comment_id}: {e}", exc_info=True)
+        
+        except Exception as e:
+            logger.error(f"Error processing comments for conversation {conversation_id}: {e}", exc_info=True)
     
     def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
         """

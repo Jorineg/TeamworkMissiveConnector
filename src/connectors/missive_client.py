@@ -114,6 +114,72 @@ class MissiveClient:
             logger.error(f"Error fetching messages for conversation {conversation_id}: {e}", exc_info=True)
         return []
     
+    def get_conversation_comments(self, conversation_id: str, limit: int = 10, until: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get comments for a conversation.
+        
+        Args:
+            conversation_id: Conversation ID
+            limit: Max comments to return per page (max 10)
+            until: Unix timestamp for pagination (use created_at of oldest comment from previous page)
+        
+        Returns:
+            List of comment dictionaries
+        """
+        try:
+            params = {"limit": min(limit, 10)}
+            if until:
+                params["until"] = until
+            
+            response = self._request("GET", f"/conversations/{conversation_id}/comments", params=params)
+            if response and "comments" in response:
+                return response["comments"]
+        except Exception as e:
+            logger.error(f"Error fetching comments for conversation {conversation_id}: {e}", exc_info=True)
+        return []
+    
+    def get_all_conversation_comments(self, conversation_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all comments for a conversation (handles pagination).
+        
+        Args:
+            conversation_id: Conversation ID
+        
+        Returns:
+            List of all comment dictionaries
+        """
+        all_comments = []
+        until = None
+        
+        while True:
+            try:
+                comments = self.get_conversation_comments(conversation_id, limit=10, until=until)
+                
+                if not comments:
+                    break
+                
+                all_comments.extend(comments)
+                logger.debug(f"Fetched {len(comments)} comments for conversation {conversation_id}")
+                
+                # Check for pagination - if fewer than limit, we're done
+                if len(comments) < 10:
+                    break
+                
+                # Get the oldest comment's created_at for pagination
+                oldest_created_at = min(c.get("created_at", 0) for c in comments)
+                
+                # Check if all comments have same created_at (edge case mentioned in API docs)
+                if oldest_created_at == until:
+                    break
+                
+                until = oldest_created_at
+                
+            except Exception as e:
+                logger.error(f"Error during comment pagination for {conversation_id}: {e}", exc_info=True)
+                break
+        
+        return all_comments
+    
     def get_message(self, message_id: str) -> Optional[Dict[str, Any]]:
         """
         Get full message details including complete body.

@@ -33,7 +33,7 @@ if [ -d "venv" ]; then
 fi
 
 # Check if required packages are installed
-if ! python -c "import flask" 2>/dev/null; then
+if ! python3 -c "import flask" 2>/dev/null; then
     echo -e "${RED}Error: Required packages not installed${NC}"
     echo "Please run: pip install -r requirements.txt"
     exit 1
@@ -46,7 +46,7 @@ mkdir -p data/checkpoints
 
 # Start ngrok and perform backfill (runs in background, keeps ngrok alive)
 echo -e "${YELLOW}Starting ngrok tunnel and performing backfill...${NC}"
-python -m src.startup &
+python3 -m src.startup &
 STARTUP_PID=$!
 echo "Startup process PID: $STARTUP_PID"
 
@@ -55,13 +55,13 @@ sleep 3
 
 # Start Flask app
 echo -e "${YELLOW}Starting Flask webhook server...${NC}"
-python -m src.app &
+python3 -m src.app &
 FLASK_PID=$!
 echo "Flask app PID: $FLASK_PID"
 
 # Start worker
 echo -e "${YELLOW}Starting worker dispatcher...${NC}"
-python -m src.workers.dispatcher &
+python3 -m src.workers.dispatcher &
 WORKER_PID=$!
 echo "Worker dispatcher PID: $WORKER_PID"
 
