@@ -40,6 +40,28 @@ class PostgresLegacyOps:
         
         try:
             with self.conn.cursor() as cur:
+                # Collect all parent task IDs to validate in a single query
+                parent_task_ids_to_check = set()
+                for task in tasks:
+                    raw = task.raw or {}
+                    parent_task_id = self._extract_id(raw.get("parentTask"))
+                    if parent_task_id:
+                        parent_task_ids_to_check.add(parent_task_id)
+                
+                # Batch validate parent task IDs
+                valid_parent_task_ids = set()
+                if parent_task_ids_to_check:
+                    cur.execute(
+                        "SELECT id FROM teamwork.tasks WHERE id = ANY(%s)",
+                        (list(parent_task_ids_to_check),)
+                    )
+                    valid_parent_task_ids = {row[0] for row in cur.fetchall()}
+                    
+                    # Log missing parent tasks
+                    missing_parents = parent_task_ids_to_check - valid_parent_task_ids
+                    for missing_id in missing_parents:
+                        logger.warning(f"Parent task {missing_id} not found in teamwork.tasks, setting to NULL")
+                
                 # Prepare data for batch insert
                 task_data = []
                 
@@ -54,8 +76,10 @@ class PostgresLegacyOps:
                     project_id = self._extract_id(raw.get("project") or task.project_id)
                     tasklist_id = self._extract_id(raw.get("tasklist") or raw.get("tasklistId") or task.tasklist_id)
                     
-                    # Extract parent task ID (INTEGER in new schema)
+                    # Extract parent task ID and validate it exists
                     parent_task_id = self._extract_id(raw.get("parentTask"))
+                    if parent_task_id and parent_task_id not in valid_parent_task_ids:
+                        parent_task_id = None  # Set to NULL if parent doesn't exist
                     
                     # Convert task_id (string) to integer for new schema
                     task_id_int = int(task.task_id)

@@ -99,7 +99,9 @@ class WorkerDispatcher:
         
         # Process Teamwork items
         if teamwork_items:
-            tasks = []
+            # Track items and their corresponding tasks for proper completion marking
+            item_task_pairs = []  # List of (item, task_or_none)
+            
             for item in teamwork_items:
                 try:
                     payload = dict(item.payload or {})
@@ -107,39 +109,52 @@ class WorkerDispatcher:
                     
                     # Collect tasks from handler
                     task = self.teamwork_handler.process_event(item.event_type, payload)
-                    if task:
-                        tasks.append(task)
-                    
-                    # Mark item as completed
-                    self.queue.mark_item_completed(item)
+                    item_task_pairs.append((item, task))
                     
                 except Exception as e:
                     logger.error(f"Error processing teamwork item {item.external_id}: {e}", exc_info=True)
                     self.queue.mark_item_failed(item, str(e), retry=True)
             
-            # Batch upsert tasks
+            # Batch upsert tasks - only mark completed AFTER successful DB operations
+            tasks = [task for _, task in item_task_pairs if task]
             if tasks:
-                self.db.upsert_tasks_batch(tasks)
-                
-                # Link tags and assignees if using relational structure
-                if hasattr(self.db, 'link_task_tags'):
-                    for task in tasks:
-                        try:
-                            # Link tags if available
-                            tag_ids = task.raw.get("_tag_ids_to_link", [])
-                            if tag_ids:
-                                self.db.link_task_tags(task.task_id, tag_ids)
-                            
-                            # Link assignees if available
-                            assignee_user_ids = task.raw.get("_assignee_user_ids_to_link", [])
-                            if assignee_user_ids:
-                                self.db.link_task_assignees(task.task_id, assignee_user_ids)
-                        except Exception as e:
-                            logger.error(f"Error linking task {task.task_id} relationships: {e}", exc_info=True)
+                try:
+                    self.db.upsert_tasks_batch(tasks)
+                    
+                    # Link tags and assignees if using relational structure
+                    if hasattr(self.db, 'link_task_tags'):
+                        for task in tasks:
+                            try:
+                                # Link tags if available
+                                tag_ids = task.raw.get("_tag_ids_to_link", [])
+                                if tag_ids:
+                                    self.db.link_task_tags(task.task_id, tag_ids)
+                                
+                                # Link assignees if available
+                                assignee_user_ids = task.raw.get("_assignee_user_ids_to_link", [])
+                                if assignee_user_ids:
+                                    self.db.link_task_assignees(task.task_id, assignee_user_ids)
+                            except Exception as e:
+                                logger.error(f"Error linking task {task.task_id} relationships: {e}", exc_info=True)
+                    
+                    # Mark all items as completed only after successful batch upsert
+                    for item, _ in item_task_pairs:
+                        self.queue.mark_item_completed(item)
+                        
+                except Exception as e:
+                    logger.warning(f"Batch upsert failed, falling back to individual processing: {e}")
+                    # Fallback: process each item individually to isolate failures
+                    self._process_teamwork_items_individually(item_task_pairs)
+            else:
+                # No tasks to upsert, mark items as completed (e.g., deleted tasks)
+                for item, _ in item_task_pairs:
+                    self.queue.mark_item_completed(item)
         
         # Process Missive items
         if missive_items:
-            emails = []
+            # Track items and their corresponding emails for proper completion marking
+            item_email_pairs = []  # List of (item, emails_list_or_none)
+            
             for item in missive_items:
                 try:
                     payload = dict(item.payload or {})
@@ -148,19 +163,81 @@ class WorkerDispatcher:
                     
                     # Collect emails from handler
                     item_emails = self.missive_handler.process_event(item.event_type, payload)
-                    if item_emails:
-                        emails.extend(item_emails)
-                    
-                    # Mark item as completed
-                    self.queue.mark_item_completed(item)
+                    item_email_pairs.append((item, item_emails))
                     
                 except Exception as e:
                     logger.error(f"Error processing missive item {item.external_id}: {e}", exc_info=True)
                     self.queue.mark_item_failed(item, str(e), retry=True)
             
             # Batch upsert emails
+            all_emails = []
+            for _, emails in item_email_pairs:
+                if emails:
+                    all_emails.extend(emails)
+            
+            if all_emails:
+                try:
+                    self.db.upsert_emails_batch(all_emails)
+                    # Mark all items as completed only after successful batch upsert
+                    for item, _ in item_email_pairs:
+                        self.queue.mark_item_completed(item)
+                except Exception as e:
+                    logger.warning(f"Batch email upsert failed, falling back to individual processing: {e}")
+                    # Fallback: process each item individually
+                    self._process_missive_items_individually(item_email_pairs)
+            else:
+                # No emails to upsert, mark items as completed
+                for item, _ in item_email_pairs:
+                    self.queue.mark_item_completed(item)
+    
+    def _process_teamwork_items_individually(self, item_task_pairs: list) -> None:
+        """
+        Process teamwork items one by one when batch processing fails.
+        This isolates failing items so others can succeed.
+        """
+        for item, task in item_task_pairs:
+            if task:
+                try:
+                    self.db.upsert_tasks_batch([task])
+                    
+                    # Link tags and assignees
+                    if hasattr(self.db, 'link_task_tags'):
+                        tag_ids = task.raw.get("_tag_ids_to_link", [])
+                        if tag_ids:
+                            self.db.link_task_tags(task.task_id, tag_ids)
+                        
+                        assignee_user_ids = task.raw.get("_assignee_user_ids_to_link", [])
+                        if assignee_user_ids:
+                            self.db.link_task_assignees(task.task_id, assignee_user_ids)
+                    
+                    self.queue.mark_item_completed(item)
+                    logger.debug(f"Successfully processed task {task.task_id} individually")
+                except Exception as e:
+                    error_msg = f"Individual task upsert failed for {task.task_id}: {e}"
+                    logger.error(error_msg)
+                    self.queue.mark_item_failed(item, error_msg, retry=True)
+            else:
+                # No task (e.g., deletion event) - mark as completed
+                self.queue.mark_item_completed(item)
+    
+    def _process_missive_items_individually(self, item_email_pairs: list) -> None:
+        """
+        Process missive items one by one when batch processing fails.
+        This isolates failing items so others can succeed.
+        """
+        for item, emails in item_email_pairs:
             if emails:
-                self.db.upsert_emails_batch(emails)
+                try:
+                    self.db.upsert_emails_batch(emails)
+                    self.queue.mark_item_completed(item)
+                    logger.debug(f"Successfully processed emails for {item.external_id} individually")
+                except Exception as e:
+                    error_msg = f"Individual email upsert failed for {item.external_id}: {e}"
+                    logger.error(error_msg)
+                    self.queue.mark_item_failed(item, error_msg, retry=True)
+            else:
+                # No emails - mark as completed
+                self.queue.mark_item_completed(item)
     
     def _process_item(self, item: QueueItem) -> None:
         """
