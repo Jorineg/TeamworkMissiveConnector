@@ -26,23 +26,35 @@ class StartupManager:
     
     def __init__(self):
         self.db = self._create_database()
-        self.queue = PostgresQueue(self.db.conn)
+        self.queue = PostgresQueue(self.db)  # Pass db instance, not conn
         self.teamwork_client = TeamworkClient()
         self.missive_client = MissiveClient()
         self.ngrok_tunnel = None
     
     def _create_database(self) -> DatabaseInterface:
-        """Create database instance based on configuration."""
-        try:
-            if settings.DB_BACKEND == "airtable":
-                return AirtableDatabase()
-            elif settings.DB_BACKEND == "postgres":
-                return PostgresDatabase()
-            else:
-                raise ValueError(f"Invalid DB_BACKEND: {settings.DB_BACKEND}")
-        except Exception as e:
-            logger.error(f"Failed to initialize database: {e}", exc_info=True)
-            raise
+        """Create database instance based on configuration.
+        
+        Will retry indefinitely until database is available.
+        """
+        delay = settings.DB_RECONNECT_DELAY
+        
+        while True:
+            try:
+                if settings.DB_BACKEND == "airtable":
+                    return AirtableDatabase()
+                elif settings.DB_BACKEND == "postgres":
+                    return PostgresDatabase()
+                else:
+                    raise ValueError(f"Invalid DB_BACKEND: {settings.DB_BACKEND}")
+            except ValueError:
+                raise  # Re-raise config errors
+            except Exception as e:
+                logger.warning(
+                    f"Failed to initialize database: {e}. "
+                    f"Retrying in {delay}s..."
+                )
+                time.sleep(delay)
+                delay = min(delay * 2, settings.DB_MAX_RECONNECT_DELAY)
     
     def start_ngrok(self) -> Optional[str]:
         """

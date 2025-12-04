@@ -62,6 +62,12 @@ PERIODIC_BACKFILL_INTERVAL = int(os.getenv("PERIODIC_BACKFILL_INTERVAL", _defaul
 # PostgreSQL settings
 PG_DSN = os.getenv("PG_DSN")
 
+# Database resilience settings
+DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "10"))  # Connection timeout in seconds
+DB_RECONNECT_DELAY = int(os.getenv("DB_RECONNECT_DELAY", "5"))  # Delay between reconnect attempts
+DB_MAX_RECONNECT_DELAY = int(os.getenv("DB_MAX_RECONNECT_DELAY", "60"))  # Max delay with exponential backoff
+DB_OPERATION_RETRIES = int(os.getenv("DB_OPERATION_RETRIES", "3"))  # Retries for individual operations
+
 # Queue settings (now in PostgreSQL for postgres backend)
 MAX_QUEUE_ATTEMPTS = int(os.getenv("MAX_QUEUE_ATTEMPTS", "3"))
 BACKFILL_OVERLAP_SECONDS = int(os.getenv("BACKFILL_OVERLAP_SECONDS", "120"))

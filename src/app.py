@@ -1,8 +1,10 @@
-"""Flask application for webhook endpoints."""
+"""Flask application for webhook endpoints with database resilience."""
 import sys
 import threading
+import time
 from flask import Flask, request, jsonify
 from datetime import datetime, timezone
+from typing import Optional
 
 from src import settings
 from src.logging_conf import logger
@@ -15,9 +17,98 @@ from src.db.postgres_impl import PostgresDatabase
 # Create Flask app
 app = Flask(__name__)
 
-# Create database and queue instance (PostgreSQL-backed)
-db = PostgresDatabase()
-queue = PostgresQueue(db.conn)
+
+class DatabaseManager:
+    """
+    Manages database connection with lazy initialization and resilience.
+    
+    This class ensures the application can start even if the database is unavailable,
+    and will automatically reconnect when the database becomes available again.
+    """
+    
+    def __init__(self):
+        self._db: Optional[PostgresDatabase] = None
+        self._queue: Optional[PostgresQueue] = None
+        self._lock = threading.Lock()
+        self._last_connection_attempt = 0
+        self._min_retry_interval = 5  # Minimum seconds between connection attempts
+    
+    def _try_connect(self) -> bool:
+        """Attempt to establish database connection."""
+        try:
+            self._db = PostgresDatabase()
+            self._queue = PostgresQueue(self._db)
+            logger.info("Database connection established for Flask app")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to connect to database: {e}")
+            self._db = None
+            self._queue = None
+            return False
+    
+    def get_db(self) -> Optional[PostgresDatabase]:
+        """
+        Get the database instance, attempting to connect if not available.
+        
+        Returns:
+            PostgresDatabase instance or None if unavailable
+        """
+        with self._lock:
+            # Check if we have a valid connection
+            if self._db is not None:
+                try:
+                    if self._db.is_connected():
+                        return self._db
+                except Exception:
+                    pass
+                
+                # Connection is invalid, clean up
+                try:
+                    self._db.close()
+                except Exception:
+                    pass
+                self._db = None
+                self._queue = None
+            
+            # Rate limit connection attempts
+            current_time = time.time()
+            if current_time - self._last_connection_attempt < self._min_retry_interval:
+                return None
+            
+            self._last_connection_attempt = current_time
+            self._try_connect()
+            return self._db
+    
+    def get_queue(self) -> Optional[PostgresQueue]:
+        """
+        Get the queue instance, attempting to connect if database not available.
+        
+        Returns:
+            PostgresQueue instance or None if database unavailable
+        """
+        # Ensure database is connected first
+        self.get_db()
+        return self._queue
+    
+    def is_available(self) -> bool:
+        """Check if database is currently available."""
+        db = self.get_db()
+        return db is not None
+    
+    def close(self):
+        """Close database connection."""
+        with self._lock:
+            if self._db is not None:
+                try:
+                    self._db.close()
+                except Exception:
+                    pass
+                self._db = None
+                self._queue = None
+
+
+# Global database manager (lazy initialization)
+db_manager = DatabaseManager()
 
 # Periodic backfill timer
 _backfill_timer = None
@@ -26,12 +117,26 @@ _backfill_stop_event = threading.Event()
 
 @app.route("/health", methods=["GET"])
 def health():
-    """Health check endpoint."""
-    health_metrics = queue.get_queue_health()
-    total_pending = sum(m.get('pending', 0) for m in health_metrics.values())
+    """Health check endpoint with database status."""
+    db_available = db_manager.is_available()
+    queue = db_manager.get_queue()
+    
+    # Get queue health if database is available
+    health_metrics = {}
+    total_pending = 0
+    
+    if queue is not None:
+        try:
+            health_metrics = queue.get_queue_health()
+            total_pending = sum(m.get('pending', 0) for m in health_metrics.values())
+        except Exception as e:
+            logger.warning(f"Failed to get queue health: {e}")
+    
+    status = "healthy" if db_available else "degraded"
     
     return jsonify({
-        "status": "healthy",
+        "status": status,
+        "database_available": db_available,
         "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "queue_pending": total_pending,
         "queue_details": health_metrics
@@ -62,6 +167,17 @@ def teamwork_webhook():
             logger.warning("No task ID found in Teamwork webhook")
             return jsonify({"error": "No task ID found"}), 400
         
+        # Get queue (with automatic connection retry)
+        queue = db_manager.get_queue()
+        
+        if queue is None:
+            # Database unavailable - log and return service unavailable
+            logger.error("Database unavailable, cannot enqueue Teamwork webhook")
+            return jsonify({
+                "error": "Service temporarily unavailable",
+                "message": "Database connection unavailable. Please retry later."
+            }), 503
+        
         # Create queue item with minimal payload (store only IDs)
         item = QueueItem.create(
             source="teamwork",
@@ -71,14 +187,15 @@ def teamwork_webhook():
         )
         
         # Enqueue
-        queue.enqueue(item)
-        
-        logger.info(
-            f"Received Teamwork webhook for task {task_id}",
-            extra={"source": "teamwork", "event_id": task_id}
-        )
-        
-        return jsonify({"status": "accepted"}), 200
+        if queue.enqueue(item):
+            logger.info(
+                f"Received Teamwork webhook for task {task_id}",
+                extra={"source": "teamwork", "event_id": task_id}
+            )
+            return jsonify({"status": "accepted"}), 200
+        else:
+            logger.error("Failed to enqueue Teamwork webhook")
+            return jsonify({"error": "Failed to queue event"}), 503
     
     except Exception as e:
         logger.error(f"Error handling Teamwork webhook: {e}", exc_info=True)
@@ -112,6 +229,17 @@ def missive_webhook():
             logger.warning("No ID found in Missive webhook")
             return jsonify({"error": "No ID found"}), 400
         
+        # Get queue (with automatic connection retry)
+        queue = db_manager.get_queue()
+        
+        if queue is None:
+            # Database unavailable - log and return service unavailable
+            logger.error("Database unavailable, cannot enqueue Missive webhook")
+            return jsonify({
+                "error": "Service temporarily unavailable",
+                "message": "Database connection unavailable. Please retry later."
+            }), 503
+        
         # Create queue item with minimal payload (store only IDs)
         item = QueueItem.create(
             source="missive",
@@ -121,14 +249,15 @@ def missive_webhook():
         )
         
         # Enqueue
-        queue.enqueue(item)
-        
-        logger.info(
-            f"Received Missive webhook: {event_type}",
-            extra={"source": "missive", "event_id": external_id}
-        )
-        
-        return jsonify({"status": "accepted"}), 200
+        if queue.enqueue(item):
+            logger.info(
+                f"Received Missive webhook: {event_type}",
+                extra={"source": "missive", "event_id": external_id}
+            )
+            return jsonify({"status": "accepted"}), 200
+        else:
+            logger.error("Failed to enqueue Missive webhook")
+            return jsonify({"error": "Failed to queue event"}), 503
     
     except Exception as e:
         logger.error(f"Error handling Missive webhook: {e}", exc_info=True)
@@ -165,13 +294,17 @@ def _periodic_backfill():
         from src.startup import StartupManager
         
         logger.info("Running periodic backfill...")
-        manager = StartupManager()
-        manager.perform_backfill()
-        manager.cleanup()
-        logger.info("Periodic backfill completed")
+        
+        try:
+            manager = StartupManager()
+            manager.perform_backfill()
+            manager.cleanup()
+            logger.info("Periodic backfill completed")
+        except Exception as e:
+            logger.error(f"Error during periodic backfill: {e}", exc_info=True)
     
     except Exception as e:
-        logger.error(f"Error during periodic backfill: {e}", exc_info=True)
+        logger.error(f"Error initializing periodic backfill: {e}", exc_info=True)
     
     # Schedule next run (configurable interval)
     if not _backfill_stop_event.is_set():
@@ -208,6 +341,15 @@ def main():
         logger.error(f"Configuration error: {e}")
         sys.exit(1)
     
+    # Check initial database connectivity (but don't fail if unavailable)
+    if db_manager.is_available():
+        logger.info("Initial database connection successful")
+    else:
+        logger.warning(
+            "Database not available at startup. "
+            "The application will retry connecting when processing requests."
+        )
+    
     # Start periodic backfill before running the app
     start_periodic_backfill()
     
@@ -216,8 +358,8 @@ def main():
         app.run(host="0.0.0.0", port=settings.APP_PORT, debug=False)
     finally:
         stop_periodic_backfill()
+        db_manager.close()
 
 
 if __name__ == "__main__":
     main()
-

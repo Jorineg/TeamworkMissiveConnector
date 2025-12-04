@@ -1,4 +1,4 @@
-"""Worker dispatcher that processes the queue."""
+"""Worker dispatcher that processes the queue with database resilience."""
 import time
 import signal
 import sys
@@ -16,20 +16,24 @@ from src.workers.handlers.missive_events import MissiveEventHandler
 
 
 class WorkerDispatcher:
-    """Dispatcher that processes queued events."""
+    """Dispatcher that processes queued events with database resilience."""
     
     def __init__(self):
-        self.db = self._create_database()
-        self.queue = PostgresQueue(self.db.conn)
-        self.teamwork_handler = TeamworkEventHandler(self.db)
-        self.missive_handler = MissiveEventHandler(self.db)
+        self.db: Optional[DatabaseInterface] = None
+        self.queue: Optional[PostgresQueue] = None
+        self.teamwork_handler: Optional[TeamworkEventHandler] = None
+        self.missive_handler: Optional[MissiveEventHandler] = None
         self.running = True
+        self._db_available = False
         
         # Register signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
+        
+        # Initial database connection (will retry if unavailable)
+        self._ensure_database()
     
-    def _create_database(self) -> DatabaseInterface:
+    def _create_database(self) -> Optional[DatabaseInterface]:
         """Create database instance based on configuration."""
         try:
             if settings.DB_BACKEND == "airtable":
@@ -39,10 +43,54 @@ class WorkerDispatcher:
                 logger.info("Using PostgreSQL database")
                 return PostgresDatabase()
             else:
-                raise ValueError(f"Invalid DB_BACKEND: {settings.DB_BACKEND}")
+                logger.error(f"Invalid DB_BACKEND: {settings.DB_BACKEND}")
+                return None
         except Exception as e:
-            logger.error(f"Failed to initialize database: {e}", exc_info=True)
-            raise
+            logger.warning(f"Failed to initialize database: {e}")
+            return None
+    
+    def _ensure_database(self) -> bool:
+        """
+        Ensure database connection is available. Attempt to reconnect if not.
+        
+        Returns:
+            True if database is available, False otherwise
+        """
+        # If we have a DB connection, verify it's still valid
+        if self.db is not None:
+            try:
+                if hasattr(self.db, 'is_connected') and self.db.is_connected():
+                    self._db_available = True
+                    return True
+            except Exception:
+                pass
+            
+            # Connection is invalid, clean up
+            logger.warning("Database connection lost, attempting to reconnect...")
+            try:
+                self.db.close()
+            except Exception:
+                pass
+            self.db = None
+            self.queue = None
+            self.teamwork_handler = None
+            self.missive_handler = None
+            self._db_available = False
+        
+        # Try to create a new database connection
+        self.db = self._create_database()
+        
+        if self.db is not None:
+            # Initialize queue and handlers
+            self.queue = PostgresQueue(self.db)
+            self.teamwork_handler = TeamworkEventHandler(self.db)
+            self.missive_handler = MissiveEventHandler(self.db)
+            self._db_available = True
+            logger.info("Database connection established successfully")
+            return True
+        
+        self._db_available = False
+        return False
     
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully."""
@@ -50,12 +98,31 @@ class WorkerDispatcher:
         self.running = False
     
     def run(self):
-        """Main worker loop."""
+        """Main worker loop with database resilience."""
         logger.info("Worker dispatcher started")
+        
+        consecutive_db_failures = 0
+        db_retry_delay = settings.DB_RECONNECT_DELAY
         
         while self.running:
             try:
-                # Get up to 10 items from queue
+                # Ensure database connection is available
+                if not self._ensure_database():
+                    consecutive_db_failures += 1
+                    logger.warning(
+                        f"Database unavailable (attempt {consecutive_db_failures}). "
+                        f"Waiting {db_retry_delay}s before retry..."
+                    )
+                    time.sleep(db_retry_delay)
+                    # Exponential backoff with cap
+                    db_retry_delay = min(db_retry_delay * 1.5, settings.DB_MAX_RECONNECT_DELAY)
+                    continue
+                
+                # Reset retry delay on successful connection
+                consecutive_db_failures = 0
+                db_retry_delay = settings.DB_RECONNECT_DELAY
+                
+                # Get items from queue
                 items = self.queue.dequeue_batch(max_items=10)
                 
                 if not items:
@@ -66,23 +133,62 @@ class WorkerDispatcher:
                 # Process the batch
                 try:
                     self._process_batch(items)
-                    logger.info(
-                        f"Successfully processed batch of {len(items)} events"
-                    )
-                
+                    logger.info(f"Successfully processed batch of {len(items)} events")
+                    
                 except Exception as e:
                     error_msg = f"Error processing batch: {e}"
                     logger.error(error_msg, exc_info=True)
-                    # Mark all items as failed for retry
-                    self.queue.mark_batch_failed(items, error_msg)
+                    
+                    # Check if this is a database error
+                    if self._is_database_error(e):
+                        # Mark connection as invalid for next iteration
+                        self._db_available = False
+                        logger.warning("Database error detected during processing, will reconnect")
+                    else:
+                        # Non-database error, mark items as failed
+                        try:
+                            self.queue.mark_batch_failed(items, error_msg)
+                        except Exception as mark_err:
+                            logger.error(f"Failed to mark items as failed: {mark_err}")
             
             except Exception as e:
                 logger.error(f"Unexpected error in worker loop: {e}", exc_info=True)
-                time.sleep(5)  # Back off on unexpected errors
+                
+                # Check if database-related
+                if self._is_database_error(e):
+                    self._db_available = False
+                    consecutive_db_failures += 1
+                    time.sleep(db_retry_delay)
+                    db_retry_delay = min(db_retry_delay * 1.5, settings.DB_MAX_RECONNECT_DELAY)
+                else:
+                    time.sleep(5)  # Back off on unexpected non-db errors
         
         # Cleanup
+        self._cleanup()
+    
+    def _is_database_error(self, exc: Exception) -> bool:
+        """Check if an exception is database-related."""
+        from psycopg2 import OperationalError, InterfaceError
+        
+        if isinstance(exc, (OperationalError, InterfaceError)):
+            return True
+        
+        error_msg = str(exc).lower()
+        db_indicators = [
+            'connection', 'server closed', 'network', 'timeout',
+            'could not connect', 'terminating connection', 'connection refused',
+            'no route to host', 'connection reset', 'broken pipe', 'database',
+        ]
+        return any(indicator in error_msg for indicator in db_indicators)
+    
+    def _cleanup(self):
+        """Clean up resources."""
         logger.info("Worker dispatcher shutting down")
-        self.db.close()
+        if self.db is not None:
+            try:
+                self.db.close()
+            except Exception as e:
+                logger.warning(f"Error closing database: {e}")
     
     def _process_batch(self, items: list) -> None:
         """
@@ -279,4 +385,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
