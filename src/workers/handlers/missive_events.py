@@ -61,8 +61,9 @@ class MissiveEventHandler:
             except Exception as e:
                 logger.error(f"Failed to upsert conversation {conversation_id}: {e}", exc_info=True)
         
-        # Handle comment events - fetch and store all comments for the conversation
-        if event_type == "new_comment" or "comment" in event_type.lower():
+        # Handle comment events or backfill - fetch and store all comments for the conversation
+        # In polling mode, backfill events should also fetch comments to ensure complete data sync
+        if event_type == "new_comment" or "comment" in event_type.lower() or "backfill" in event_type.lower():
             self._process_conversation_comments(conversation_id)
             # Comments don't produce Email objects, but we still process messages below
         
