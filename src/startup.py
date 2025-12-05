@@ -153,7 +153,13 @@ class StartupManager:
     
     
     def perform_backfill(self):
-        """Perform startup backfill to catch missed events."""
+        """Perform startup backfill to catch missed events.
+        
+        Note: Craft documents are NOT polled here - they use a separate
+        dedicated polling interval (CRAFT_POLL_INTERVAL) managed by app.py.
+        This is because Craft requires full document re-fetches each time
+        and doesn't benefit from the frequent polling used for Teamwork/Missive.
+        """
         logger.info("Starting backfill operation...")
         
         # Backfill Teamwork tasks

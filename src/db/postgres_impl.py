@@ -3,6 +3,7 @@ from src.db.interface import DatabaseInterface
 from src.db.postgres_connection import PostgresConnection
 from src.db.postgres_teamwork import PostgresTeamworkOps
 from src.db.postgres_missive import PostgresMissiveOps
+from src.db.postgres_craft import PostgresCraftOps
 from src.db.postgres_legacy import PostgresLegacyOps
 from src.logging_conf import logger
 
@@ -11,6 +12,7 @@ class PostgresDatabase(
     PostgresConnection,
     PostgresTeamworkOps,
     PostgresMissiveOps,
+    PostgresCraftOps,
     PostgresLegacyOps,
     DatabaseInterface
 ):
@@ -19,7 +21,8 @@ class PostgresDatabase(
     This class combines functionality from multiple modules:
     - PostgresConnection: Connection management and helper utilities
     - PostgresTeamworkOps: Teamwork entity operations
-    - PostgresMissiveOps: Missive entity operations  
+    - PostgresMissiveOps: Missive entity operations
+    - PostgresCraftOps: Craft document operations
     - PostgresLegacyOps: Legacy email/task/checkpoint operations
     - DatabaseInterface: Abstract interface definition
     
