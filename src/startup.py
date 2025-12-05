@@ -16,6 +16,7 @@ from src.db.models import Checkpoint
 from src.db.airtable_setup import AirtableSetup
 from src.connectors.teamwork_client import TeamworkClient
 from src.connectors.missive_client import MissiveClient
+from src.connectors.craft_client import CraftClient
 from src.connectors.label_categories import get_label_categories
 from src.webhooks.teamwork_webhooks import TeamworkWebhookManager
 from src.webhooks.missive_webhooks import MissiveWebhookManager
@@ -29,6 +30,7 @@ class StartupManager:
         self.queue = PostgresQueue(self.db)  # Pass db instance, not conn
         self.teamwork_client = TeamworkClient()
         self.missive_client = MissiveClient()
+        self.craft_client = CraftClient()
         self.ngrok_tunnel = None
     
     def _create_database(self) -> DatabaseInterface:
@@ -153,13 +155,7 @@ class StartupManager:
     
     
     def perform_backfill(self):
-        """Perform startup backfill to catch missed events.
-        
-        Note: Craft documents are NOT polled here - they use a separate
-        dedicated polling interval (CRAFT_POLL_INTERVAL) managed by app.py.
-        This is because Craft requires full document re-fetches each time
-        and doesn't benefit from the frequent polling used for Teamwork/Missive.
-        """
+        """Perform startup backfill to catch missed events."""
         logger.info("Starting backfill operation...")
         
         # Backfill Teamwork tasks
@@ -173,6 +169,12 @@ class StartupManager:
             self._backfill_missive()
         except Exception as e:
             logger.error(f"Error during Missive backfill: {e}", exc_info=True)
+        
+        # Backfill Craft documents
+        try:
+            self._backfill_craft()
+        except Exception as e:
+            logger.error(f"Error during Craft backfill: {e}", exc_info=True)
         
         logger.info("Backfill operation completed")
     
@@ -324,6 +326,88 @@ class StartupManager:
         )
         self.db.set_checkpoint(checkpoint)
         logger.info(f"Updated Missive checkpoint to {latest_time.isoformat()}")
+    
+    def _backfill_craft(self):
+        """Backfill Craft documents."""
+        if not self.craft_client.is_configured():
+            logger.debug("Craft not configured, skipping backfill")
+            return
+        
+        logger.info("Backfilling Craft documents...")
+        
+        # Get last checkpoint
+        checkpoint = self.db.get_checkpoint("craft")
+        
+        # Fetch all documents with metadata (includes lastModifiedAt)
+        documents = self.craft_client.get_documents(fetch_metadata=True)
+        
+        if not documents:
+            logger.info("No Craft documents found")
+            return
+        
+        # Filter documents modified since checkpoint
+        if checkpoint:
+            since = checkpoint.last_event_time - timedelta(seconds=settings.BACKFILL_OVERLAP_SECONDS)
+            logger.info(f"Fetching Craft documents modified since {since.isoformat()}")
+            
+            filtered_docs = []
+            for doc in documents:
+                last_modified = doc.get("lastModifiedAt")
+                if last_modified:
+                    try:
+                        doc_time = datetime.fromisoformat(last_modified.replace("Z", "+00:00"))
+                        if doc_time >= since:
+                            filtered_docs.append(doc)
+                    except (ValueError, AttributeError):
+                        # Include docs with unparseable timestamps
+                        filtered_docs.append(doc)
+                else:
+                    # Include docs without lastModifiedAt (shouldn't happen with fetchMetadata=true)
+                    filtered_docs.append(doc)
+            documents = filtered_docs
+        else:
+            logger.info("First run: fetching all Craft documents")
+        
+        logger.info(f"Found {len(documents)} Craft documents to backfill")
+        
+        # Enqueue each document
+        for doc_data in documents:
+            try:
+                doc_id = str(doc_data.get("id", ""))
+                if not doc_id:
+                    continue
+                
+                item = QueueItem.create(
+                    source="craft",
+                    event_type="document.backfill",
+                    external_id=doc_id,
+                    payload={}
+                )
+                self.queue.enqueue(item)
+            
+            except Exception as e:
+                logger.error(f"Error enqueueing Craft document: {e}", exc_info=True)
+        
+        # Update checkpoint to current time
+        latest_time = datetime.now(timezone.utc)
+        
+        # If we found documents, try to use the latest document timestamp
+        if documents:
+            for doc_data in documents:
+                if doc_data.get("lastModifiedAt"):
+                    try:
+                        doc_time = datetime.fromisoformat(doc_data["lastModifiedAt"].replace("Z", "+00:00"))
+                        if doc_time > latest_time:
+                            latest_time = doc_time
+                    except (ValueError, AttributeError):
+                        pass
+        
+        checkpoint = Checkpoint(
+            source="craft",
+            last_event_time=latest_time
+        )
+        self.db.set_checkpoint(checkpoint)
+        logger.info(f"Updated Craft checkpoint to {latest_time.isoformat()}")
     
     def cleanup(self):
         """Cleanup resources."""

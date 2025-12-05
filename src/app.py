@@ -114,10 +114,6 @@ db_manager = DatabaseManager()
 _backfill_timer = None
 _backfill_stop_event = threading.Event()
 
-# Periodic Craft poll timer (separate from backfill)
-_craft_poll_timer = None
-_craft_poll_stop_event = threading.Event()
-
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -337,82 +333,6 @@ def stop_periodic_backfill():
         _backfill_timer.cancel()
 
 
-def _periodic_craft_poll():
-    """Run Craft poll periodically (separate from backfill)."""
-    if _craft_poll_stop_event.is_set():
-        return
-    
-    try:
-        from src.connectors.craft_client import CraftClient
-        from src.db.postgres_impl import PostgresDatabase
-        
-        craft_client = CraftClient()
-        
-        if not craft_client.is_configured():
-            logger.debug("Craft not configured, skipping periodic poll")
-        else:
-            logger.info("Running periodic Craft poll...")
-            
-            try:
-                # Create database connection
-                db = PostgresDatabase()
-                
-                # Fetch all documents with content
-                documents = craft_client.get_all_documents_with_content(fetch_metadata=True)
-                
-                if documents:
-                    # Upsert to database
-                    if hasattr(db, 'upsert_craft_documents_batch'):
-                        db.upsert_craft_documents_batch(documents)
-                    else:
-                        for doc in documents:
-                            db.upsert_craft_document(doc)
-                    
-                    logger.info(f"Periodic Craft poll completed, synced {len(documents)} documents")
-                else:
-                    logger.info("Periodic Craft poll completed, no documents found")
-                
-                db.close()
-            except Exception as e:
-                logger.error(f"Error during periodic Craft poll: {e}", exc_info=True)
-    
-    except Exception as e:
-        logger.error(f"Error initializing periodic Craft poll: {e}", exc_info=True)
-    
-    # Schedule next run
-    if not _craft_poll_stop_event.is_set():
-        global _craft_poll_timer
-        _craft_poll_timer = threading.Timer(float(settings.CRAFT_POLL_INTERVAL), _periodic_craft_poll)
-        _craft_poll_timer.daemon = True
-        _craft_poll_timer.start()
-
-
-def start_periodic_craft_poll():
-    """Start the periodic Craft poll timer."""
-    from src.connectors.craft_client import CraftClient
-    
-    craft_client = CraftClient()
-    if not craft_client.is_configured():
-        logger.info("Craft not configured, skipping periodic poll setup")
-        return
-    
-    global _craft_poll_timer
-    interval = settings.CRAFT_POLL_INTERVAL
-    logger.info(f"Starting periodic Craft poll (every {interval} seconds)...")
-    _craft_poll_timer = threading.Timer(float(interval), _periodic_craft_poll)
-    _craft_poll_timer.daemon = True
-    _craft_poll_timer.start()
-
-
-def stop_periodic_craft_poll():
-    """Stop the periodic Craft poll timer."""
-    global _craft_poll_timer
-    logger.info("Stopping periodic Craft poll...")
-    _craft_poll_stop_event.set()
-    if _craft_poll_timer:
-        _craft_poll_timer.cancel()
-
-
 def main():
     """Entry point for Flask app."""
     try:
@@ -433,15 +353,11 @@ def main():
     # Start periodic backfill before running the app
     start_periodic_backfill()
     
-    # Start periodic Craft poll (separate interval from backfill)
-    start_periodic_craft_poll()
-    
     try:
         logger.info(f"Starting Flask app on port {settings.APP_PORT}")
         app.run(host="0.0.0.0", port=settings.APP_PORT, debug=False)
     finally:
         stop_periodic_backfill()
-        stop_periodic_craft_poll()
         db_manager.close()
 
 

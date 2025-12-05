@@ -15,7 +15,6 @@ This document provides a comprehensive list of all environment variables used by
 | [`MISSIVE_WEBHOOK_SECRET`](#missive_webhook_secret) | ❌ No | Empty | Webhook signature validation | [↓](#missive_webhook_secret) |
 | [`MISSIVE_PROCESS_AFTER`](#missive_process_after) | ❌ No | None | Filter emails by received date | [↓](#missive_process_after) |
 | [`CRAFT_BASE_URL`](#craft_base_url) | ❌ No | - | Craft Multi-Document API URL | [↓](#craft_base_url) |
-| [`CRAFT_POLL_INTERVAL`](#craft_poll_interval) | ❌ No | `600` | Craft polling interval (seconds) | [↓](#craft_poll_interval) |
 | [`AIRTABLE_API_KEY`](#airtable_api_key) | ⚠️ If Airtable | - | Airtable authentication | [↓](#airtable_api_key) |
 | [`AIRTABLE_BASE_ID`](#airtable_base_id) | ⚠️ If Airtable | - | Airtable base identifier | [↓](#airtable_base_id) |
 | [`AIRTABLE_EMAILS_TABLE`](#airtable_emails_table) | ❌ No | `Emails` | Emails table name | [↓](#airtable_emails_table) |
@@ -178,19 +177,12 @@ These variables must be set for the connector to function:
 - **Example**: `https://connect.craft.do/links/FLzEdbunAos/api/v1`
 - **How to get**: Create a "Multi-Document Link" in Craft and get the API URL
 - **When NOT needed**: If you don't use Craft for documentation
-- **Note**: Craft doesn't support webhooks, so documents are synced via polling only
-
-#### `CRAFT_POLL_INTERVAL`
-- **Description**: Interval in seconds for polling Craft documents
-- **Default**: `600` (10 minutes)
-- **Format**: Integer (seconds)
-- **Example**: `300` (5 minutes)
-- **Considerations**:
-  - Craft API doesn't provide incremental updates, so each poll fetches ALL documents
-  - Lower values = More API calls but more real-time updates
-  - Higher values = Fewer API calls but less frequent updates
-  - This is separate from the main `PERIODIC_BACKFILL_INTERVAL`
-- **Recommended**: Keep at 10 minutes or higher to avoid unnecessary API load
+- **Note**: Craft doesn't support webhooks, so documents are synced via polling using `PERIODIC_BACKFILL_INTERVAL`
+- **Behavior**: 
+  - Uses checkpoint-based incremental sync (like Teamwork/Missive)
+  - Only documents modified since last checkpoint are fetched
+  - Document content is fetched as markdown
+  - Uses the same `PERIODIC_BACKFILL_INTERVAL` as Teamwork/Missive
 
 #### `DISABLE_WEBHOOKS`
 - **Description**: Switch to polling-only mode (no webhooks)
@@ -397,7 +389,6 @@ PERIODIC_BACKFILL_INTERVAL=60
 
 # Craft integration (optional)
 CRAFT_BASE_URL=https://connect.craft.do/links/YOUR_LINK_ID/api/v1
-CRAFT_POLL_INTERVAL=600
 
 # Betterstack logging (optional)
 BETTERSTACK_SOURCE_TOKEN=your_betterstack_token_here

@@ -13,6 +13,7 @@ from src.db.airtable_impl import AirtableDatabase
 from src.db.postgres_impl import PostgresDatabase
 from src.workers.handlers.teamwork_events import TeamworkEventHandler
 from src.workers.handlers.missive_events import MissiveEventHandler
+from src.workers.handlers.craft_events import CraftEventHandler
 
 
 class WorkerDispatcher:
@@ -23,6 +24,7 @@ class WorkerDispatcher:
         self.queue: Optional[PostgresQueue] = None
         self.teamwork_handler: Optional[TeamworkEventHandler] = None
         self.missive_handler: Optional[MissiveEventHandler] = None
+        self.craft_handler: Optional[CraftEventHandler] = None
         self.running = True
         self._db_available = False
         
@@ -75,6 +77,7 @@ class WorkerDispatcher:
             self.queue = None
             self.teamwork_handler = None
             self.missive_handler = None
+            self.craft_handler = None
             self._db_available = False
         
         # Try to create a new database connection
@@ -85,6 +88,7 @@ class WorkerDispatcher:
             self.queue = PostgresQueue(self.db)
             self.teamwork_handler = TeamworkEventHandler(self.db)
             self.missive_handler = MissiveEventHandler(self.db)
+            self.craft_handler = CraftEventHandler(self.db)
             self._db_available = True
             logger.info("Database connection established successfully")
             return True
@@ -202,6 +206,7 @@ class WorkerDispatcher:
         # Separate items by source
         teamwork_items = [item for item in items if item.source == "teamwork"]
         missive_items = [item for item in items if item.source == "missive"]
+        craft_items = [item for item in items if item.source == "craft"]
         
         # Process Teamwork items
         if teamwork_items:
@@ -295,6 +300,25 @@ class WorkerDispatcher:
                 # No emails to upsert, mark items as completed
                 for item, _ in item_email_pairs:
                     self.queue.mark_item_completed(item)
+        
+        # Process Craft items
+        # Craft documents are processed individually (handler does DB upsert directly)
+        if craft_items:
+            for item in craft_items:
+                try:
+                    payload = dict(item.payload or {})
+                    payload.setdefault("id", item.external_id)
+                    payload.setdefault("document_id", item.external_id)
+                    
+                    # Process document - handler does upsert directly
+                    result = self.craft_handler.process_event(item.event_type, payload)
+                    
+                    # Mark as completed (result is None for deleted docs, dict for success)
+                    self.queue.mark_item_completed(item)
+                    
+                except Exception as e:
+                    logger.error(f"Error processing craft item {item.external_id}: {e}", exc_info=True)
+                    self.queue.mark_item_failed(item, str(e), retry=True)
     
     def _process_teamwork_items_individually(self, item_task_pairs: list) -> None:
         """
@@ -362,6 +386,10 @@ class WorkerDispatcher:
             payload.setdefault("conversation_id", item.external_id)
             payload.setdefault("id", item.external_id)
             self.missive_handler.handle_event(item.event_type, payload)
+        elif item.source == "craft":
+            payload.setdefault("id", item.external_id)
+            payload.setdefault("document_id", item.external_id)
+            self.craft_handler.handle_event(item.event_type, payload)
         else:
             logger.warning(f"Unknown source: {item.source}")
 

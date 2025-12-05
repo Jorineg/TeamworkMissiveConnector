@@ -37,7 +37,6 @@ MISSIVE_PROCESS_AFTER = os.getenv("MISSIVE_PROCESS_AFTER")  # Format: DD.MM.YYYY
 
 # Craft settings
 CRAFT_BASE_URL = os.getenv("CRAFT_BASE_URL", "").rstrip("/")  # Multi-document API URL
-CRAFT_POLL_INTERVAL = int(os.getenv("CRAFT_POLL_INTERVAL", "600"))  # Default: 10 minutes (600 seconds)
 
 # Betterstack settings
 BETTERSTACK_SOURCE_TOKEN = os.getenv("BETTERSTACK_SOURCE_TOKEN")
