@@ -321,6 +321,9 @@ class PostgresConnection:
         if not email:
             return None
         
+        # Normalize email to lowercase for consistent comparison and storage
+        email = email.lower()
+        
         try:
             with self.conn.cursor() as cur:
                 # Try to find existing contact

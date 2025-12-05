@@ -51,6 +51,10 @@ class PostgresMissiveOps:
             email = user_data.get("email")
             name = user_data.get("name")
             
+            # Normalize email to lowercase for consistent storage
+            if email:
+                email = email.lower()
+            
             # Get or create contact for this user
             contact_id = None
             if email:
