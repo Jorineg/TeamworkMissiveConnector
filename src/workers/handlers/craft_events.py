@@ -120,3 +120,4 @@ class CraftEventHandler:
         else:
             logger.warning("Database does not support mark_craft_document_deleted")
 
+
