@@ -408,6 +408,9 @@ class PostgresMissiveOps:
                     for attachment in message_data["attachments"]:
                         attachment_id = attachment.get("id")
                         if attachment_id:
+                            filename = attachment.get("filename") or "attachment"
+                            url = attachment.get("url")
+                            
                             cur.execute("""
                                 INSERT INTO missive.attachments (
                                     id, message_id, filename, extension, url, media_type,
@@ -427,9 +430,9 @@ class PostgresMissiveOps:
                             """, (
                                 attachment_id,
                                 message_id,
-                                attachment.get("filename"),
+                                filename,
                                 attachment.get("extension"),
-                                attachment.get("url"),
+                                url,
                                 attachment.get("media_type"),
                                 attachment.get("sub_type"),
                                 attachment.get("size"),
