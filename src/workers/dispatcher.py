@@ -17,7 +17,7 @@ from src.workers.handlers.craft_events import CraftEventHandler
 class WorkerDispatcher:
     """Dispatcher that processes queued events with database resilience."""
     
-    def __init__(self):
+    def __init__(self, register_signals: bool = True):
         self.db: Optional[PostgresDatabase] = None
         self.queue: Optional[PostgresQueue] = None
         self.teamwork_handler: Optional[TeamworkEventHandler] = None
@@ -26,9 +26,13 @@ class WorkerDispatcher:
         self.running = True
         self._db_available = False
         
-        # Register signal handlers for graceful shutdown
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+        # Register signal handlers for graceful shutdown (only in main thread)
+        if register_signals:
+            try:
+                signal.signal(signal.SIGINT, self._signal_handler)
+                signal.signal(signal.SIGTERM, self._signal_handler)
+            except ValueError:
+                pass  # Not in main thread, skip signal registration
         
         # Initial database connection (will retry if unavailable)
         self._ensure_database()

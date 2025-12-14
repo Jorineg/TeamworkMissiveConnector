@@ -1,4 +1,4 @@
-"""Flask application for webhook endpoints with database resilience."""
+"""Flask application with integrated queue worker."""
 import sys
 import threading
 import time
@@ -12,10 +12,15 @@ from src.queue.postgres_queue import PostgresQueue
 from src.queue.models import QueueItem
 from src.http.security import verify_teamwork_webhook, verify_missive_webhook
 from src.db.postgres_impl import PostgresDatabase
+from src.workers.dispatcher import WorkerDispatcher
 
 
 # Create Flask app
 app = Flask(__name__)
+
+# Worker thread
+_worker_thread: Optional[threading.Thread] = None
+_worker_dispatcher: Optional[WorkerDispatcher] = None
 
 
 class DatabaseManager:
@@ -333,8 +338,34 @@ def stop_periodic_backfill():
         _backfill_timer.cancel()
 
 
+def start_worker():
+    """Start the queue worker in a background thread."""
+    global _worker_thread, _worker_dispatcher
+    
+    def run_worker():
+        global _worker_dispatcher
+        try:
+            # Don't register signals in thread (only works in main thread)
+            _worker_dispatcher = WorkerDispatcher(register_signals=False)
+            _worker_dispatcher.run()
+        except Exception as e:
+            logger.error(f"Worker dispatcher crashed: {e}", exc_info=True)
+    
+    logger.info("Starting queue worker...")
+    _worker_thread = threading.Thread(target=run_worker, daemon=True, name="QueueWorker")
+    _worker_thread.start()
+
+
+def stop_worker():
+    """Stop the queue worker."""
+    global _worker_dispatcher
+    logger.info("Stopping queue worker...")
+    if _worker_dispatcher:
+        _worker_dispatcher.running = False
+
+
 def main():
-    """Entry point for Flask app."""
+    """Entry point - starts Flask, worker, and backfill."""
     try:
         settings.validate_config()
     except ValueError as e:
@@ -350,13 +381,17 @@ def main():
             "The application will retry connecting when processing requests."
         )
     
-    # Start periodic backfill before running the app
+    # Start queue worker (processes queue items)
+    start_worker()
+    
+    # Start periodic backfill (fetches from APIs)
     start_periodic_backfill()
     
     try:
         logger.info(f"Starting Flask app on port {settings.APP_PORT}")
         app.run(host="0.0.0.0", port=settings.APP_PORT, debug=False)
     finally:
+        stop_worker()
         stop_periodic_backfill()
         db_manager.close()
 
