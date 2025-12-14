@@ -9,15 +9,11 @@ from src import settings
 from src.logging_conf import logger
 from src.queue.postgres_queue import PostgresQueue
 from src.queue.models import QueueItem
-from src.db.interface import DatabaseInterface
-from src.db.airtable_impl import AirtableDatabase
 from src.db.postgres_impl import PostgresDatabase
 from src.db.models import Checkpoint
-from src.db.airtable_setup import AirtableSetup
 from src.connectors.teamwork_client import TeamworkClient
 from src.connectors.missive_client import MissiveClient
 from src.connectors.craft_client import CraftClient
-from src.connectors.label_categories import get_label_categories
 from src.webhooks.teamwork_webhooks import TeamworkWebhookManager
 from src.webhooks.missive_webhooks import MissiveWebhookManager
 
@@ -27,34 +23,21 @@ class StartupManager:
     
     def __init__(self):
         self.db = self._create_database()
-        self.queue = PostgresQueue(self.db)  # Pass db instance, not conn
+        self.queue = PostgresQueue(self.db)
         self.teamwork_client = TeamworkClient()
         self.missive_client = MissiveClient()
         self.craft_client = CraftClient()
         self.ngrok_tunnel = None
     
-    def _create_database(self) -> DatabaseInterface:
-        """Create database instance based on configuration.
-        
-        Will retry indefinitely until database is available.
-        """
+    def _create_database(self) -> PostgresDatabase:
+        """Create database instance. Will retry indefinitely until available."""
         delay = settings.DB_RECONNECT_DELAY
         
         while True:
             try:
-                if settings.DB_BACKEND == "airtable":
-                    return AirtableDatabase()
-                elif settings.DB_BACKEND == "postgres":
-                    return PostgresDatabase()
-                else:
-                    raise ValueError(f"Invalid DB_BACKEND: {settings.DB_BACKEND}")
-            except ValueError:
-                raise  # Re-raise config errors
+                return PostgresDatabase()
             except Exception as e:
-                logger.warning(
-                    f"Failed to initialize database: {e}. "
-                    f"Retrying in {delay}s..."
-                )
+                logger.warning(f"Failed to initialize database: {e}. Retrying in {delay}s...")
                 time.sleep(delay)
                 delay = min(delay * 2, settings.DB_MAX_RECONNECT_DELAY)
     
@@ -92,31 +75,6 @@ class StartupManager:
         except Exception as e:
             logger.error(f"Failed to start ngrok tunnel: {e}", exc_info=True)
             return None
-    
-    def ensure_airtable_tables(self) -> bool:
-        """Ensure Airtable tables exist, creating them if necessary."""
-        if settings.DB_BACKEND != "airtable":
-            return True  # Not using Airtable, skip
-        
-        logger.info("Setting up Airtable tables...")
-        setup = AirtableSetup()
-        
-        # Create base tables
-        if not setup.ensure_tables_exist():
-            return False
-        
-        # Create category columns
-        label_categories = get_label_categories()
-        category_names = label_categories.get_category_names()
-        
-        if category_names:
-            logger.info(f"Setting up category columns: {', '.join(category_names)}")
-            if not setup.ensure_category_columns(category_names):
-                logger.warning("Failed to setup category columns, but continuing...")
-        else:
-            logger.info("No label categories configured, skipping category column creation")
-        
-        return True
     
     def configure_webhooks(self, public_url: str) -> None:
         """Automatically configure webhooks with the given URL."""
@@ -426,11 +384,6 @@ def main():
     manager = StartupManager()
     
     try:
-        # Ensure Airtable tables exist (if using Airtable)
-        if not manager.ensure_airtable_tables():
-            logger.error("Failed to setup Airtable tables. Check permissions.")
-            logger.info("Ensure your API key has schema.bases:write scope")
-        
         # Start ngrok (unless webhooks are disabled)
         public_url = manager.start_ngrok()
         

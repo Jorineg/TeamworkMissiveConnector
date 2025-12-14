@@ -8,8 +8,6 @@ from src import settings
 from src.logging_conf import logger
 from src.queue.postgres_queue import PostgresQueue
 from src.queue.models import QueueItem
-from src.db.interface import DatabaseInterface
-from src.db.airtable_impl import AirtableDatabase
 from src.db.postgres_impl import PostgresDatabase
 from src.workers.handlers.teamwork_events import TeamworkEventHandler
 from src.workers.handlers.missive_events import MissiveEventHandler
@@ -20,7 +18,7 @@ class WorkerDispatcher:
     """Dispatcher that processes queued events with database resilience."""
     
     def __init__(self):
-        self.db: Optional[DatabaseInterface] = None
+        self.db: Optional[PostgresDatabase] = None
         self.queue: Optional[PostgresQueue] = None
         self.teamwork_handler: Optional[TeamworkEventHandler] = None
         self.missive_handler: Optional[MissiveEventHandler] = None
@@ -35,18 +33,11 @@ class WorkerDispatcher:
         # Initial database connection (will retry if unavailable)
         self._ensure_database()
     
-    def _create_database(self) -> Optional[DatabaseInterface]:
-        """Create database instance based on configuration."""
+    def _create_database(self) -> Optional[PostgresDatabase]:
+        """Create database instance."""
         try:
-            if settings.DB_BACKEND == "airtable":
-                logger.info("Using Airtable database")
-                return AirtableDatabase()
-            elif settings.DB_BACKEND == "postgres":
-                logger.info("Using PostgreSQL database")
-                return PostgresDatabase()
-            else:
-                logger.error(f"Invalid DB_BACKEND: {settings.DB_BACKEND}")
-                return None
+            logger.info("Connecting to PostgreSQL database")
+            return PostgresDatabase()
         except Exception as e:
             logger.warning(f"Failed to initialize database: {e}")
             return None

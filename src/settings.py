@@ -42,15 +42,6 @@ CRAFT_BASE_URL = os.getenv("CRAFT_BASE_URL", "").rstrip("/")  # Multi-document A
 BETTERSTACK_SOURCE_TOKEN = os.getenv("BETTERSTACK_SOURCE_TOKEN")
 BETTERSTACK_INGEST_HOST = os.getenv("BETTERSTACK_INGEST_HOST")  # Optional: custom ingestion host
 
-# Database settings
-DB_BACKEND = os.getenv("DB_BACKEND", "airtable")
-
-# Airtable settings
-AIRTABLE_API_KEY = os.getenv("AIRTABLE_API_KEY")
-AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
-AIRTABLE_EMAILS_TABLE = os.getenv("AIRTABLE_EMAILS_TABLE", "Emails")
-AIRTABLE_TASKS_TABLE = os.getenv("AIRTABLE_TASKS_TABLE", "Tasks")
-
 # Timezone settings
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Berlin")
 
@@ -75,11 +66,6 @@ DB_OPERATION_RETRIES = int(os.getenv("DB_OPERATION_RETRIES", "3"))  # Retries fo
 MAX_QUEUE_ATTEMPTS = int(os.getenv("MAX_QUEUE_ATTEMPTS", "3"))
 BACKFILL_OVERLAP_SECONDS = int(os.getenv("BACKFILL_OVERLAP_SECONDS", "120"))
 
-# Legacy checkpoint directory for Airtable backend only
-# (PostgreSQL uses teamworkmissiveconnector.checkpoints table)
-CHECKPOINT_DIR = DATA_DIR / "checkpoints"
-if DB_BACKEND == "airtable":
-    CHECKPOINT_DIR.mkdir(exist_ok=True)
 SPOOL_RETRY_SECONDS = int(os.getenv("SPOOL_RETRY_SECONDS", "60"))
 
 
@@ -93,17 +79,8 @@ def validate_config():
         errors.append("TEAMWORK_API_KEY is required")
     if not MISSIVE_API_TOKEN:
         errors.append("MISSIVE_API_TOKEN is required")
-    
-    if DB_BACKEND == "airtable":
-        if not AIRTABLE_API_KEY:
-            errors.append("AIRTABLE_API_KEY is required when DB_BACKEND=airtable")
-        if not AIRTABLE_BASE_ID:
-            errors.append("AIRTABLE_BASE_ID is required when DB_BACKEND=airtable")
-    elif DB_BACKEND == "postgres":
-        if not PG_DSN:
-            errors.append("PG_DSN is required when DB_BACKEND=postgres")
-    else:
-        errors.append(f"Invalid DB_BACKEND: {DB_BACKEND} (must be 'airtable' or 'postgres')")
+    if not PG_DSN:
+        errors.append("PG_DSN is required")
     
     if errors:
         raise ValueError("Configuration errors:\n  " + "\n  ".join(errors))

@@ -1,10 +1,8 @@
 flask
 requests
 pyngrok
-pyairtable
 psycopg2-binary
 python-dotenv
-portalocker
 gunicorn
 logtail-python==0.2.8
 

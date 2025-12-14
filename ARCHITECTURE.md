@@ -7,23 +7,23 @@ This document describes the architecture of the Teamwork & Missive Connector sys
 ### Webhook Mode (Default - DISABLE_WEBHOOKS=false)
 
 ```
-┌─────────────┐       ┌─────────────┐
-│  Teamwork   │       │   Missive   │
-│  Webhooks   │       │  Webhooks   │
-└──────┬──────┘       └──────┬──────┘
-       │                     │
-       │    ┌─────────┐      │
-       └────►  ngrok  ◄──────┘
-            └────┬────┘
-                 │
-         ┌───────▼────────┐
-         │  Flask App     │
+┌─────────────┐       ┌─────────────┐       ┌─────────────┐
+│  Teamwork   │       │   Missive   │       │    Craft    │
+│  Webhooks   │       │  Webhooks   │       │   (Poll)    │
+└──────┬──────┘       └──────┬──────┘       └──────┬──────┘
+       │                     │                     │
+       │    ┌─────────┐      │                     │
+       └────►  ngrok  ◄──────┘                     │
+            └────┬────┘                            │
+                 │                                 │
+         ┌───────▼────────┐                        │
+         │  Flask App     │◄───────────────────────┘
          │  (Webhooks)    │◄────┐
          └───────┬────────┘     │
                  │               │ Periodic
          ┌───────▼────────┐     │ Backfill
-         │  Spool Queue   │     │ (60s)
-         │ (Persistent)   │     │
+         │ PostgreSQL     │     │ (60s)
+         │ Queue          │     │
          └───────┬────────┘     │
                  │          ┌───┴────┐
          ┌───────▼────────┐ │ Timer  │
@@ -37,52 +37,48 @@ This document describes the architecture of the Teamwork & Missive Connector sys
          └───────┬────────┘
                  │
          ┌───────▼────────┐
+         │   PostgreSQL   │
          │   Database     │
-         │  (Airtable/PG) │
          └────────────────┘
 ```
 
 ### Polling-Only Mode (DISABLE_WEBHOOKS=true)
 
 ```
-┌─────────────┐       ┌─────────────┐
-│  Teamwork   │       │   Missive   │
-│     API     │       │     API     │
-└──────▲──────┘       └──────▲──────┘
-       │                     │
-       │                     │
-       │   Periodic Polling  │
-       │      (5s default)   │
-       │                     │
-   ┌───┴─────────────────────┴───┐
-   │      Periodic Backfill      │
-   │          Timer              │
-   └───────────┬─────────────────┘
-               │
-       ┌───────▼────────┐
-       │  Spool Queue   │
-       │ (Persistent)   │
-       └───────┬────────┘
-               │
-       ┌───────▼────────┐
-       │    Worker      │
-       │  Dispatcher    │
-       └───────┬────────┘
-               │
-       ┌───────▼────────┐
-       │   Handlers     │
-       │ (Parse/Enrich) │
-       └───────┬────────┘
-               │
-       ┌───────▼────────┐
-       │   Database     │
-       │  (Airtable/PG) │
-       └────────────────┘
+┌─────────────┐       ┌─────────────┐       ┌─────────────┐
+│  Teamwork   │       │   Missive   │       │    Craft    │
+│     API     │       │     API     │       │     API     │
+└──────▲──────┘       └──────▲──────┘       └──────▲──────┘
+       │                     │                     │
+       │   Periodic Polling  │                     │
+       │      (5s default)   │                     │
+       │                     │                     │
+   ┌───┴─────────────────────┴─────────────────────┴───┐
+   │              Periodic Backfill Timer              │
+   └───────────────────────┬───────────────────────────┘
+                           │
+                   ┌───────▼────────┐
+                   │ PostgreSQL     │
+                   │ Queue          │
+                   └───────┬────────┘
+                           │
+                   ┌───────▼────────┐
+                   │    Worker      │
+                   │  Dispatcher    │
+                   └───────┬────────┘
+                           │
+                   ┌───────▼────────┐
+                   │   Handlers     │
+                   │ (Parse/Enrich) │
+                   └───────┬────────┘
+                           │
+                   ┌───────▼────────┐
+                   │   PostgreSQL   │
+                   │   Database     │
+                   └────────────────┘
 ```
 
 ## Operation Modes
-
-The system supports two operation modes:
 
 ### 1. Webhook Mode (Default)
 **Configuration**: `DISABLE_WEBHOOKS=false` (default)
@@ -92,7 +88,6 @@ The system supports two operation modes:
 - Webhooks automatically configured in Teamwork and Missive
 - Real-time event notifications arrive immediately
 - Periodic backfill runs every 60 seconds (default) as safety net
-- Best for: Real-time synchronization, production environments
 
 **Advantages**:
 - Near-instant updates (events arrive within seconds)
@@ -113,30 +108,22 @@ The system supports two operation modes:
 - Periodic polling queries APIs every 5 seconds (default)
 - Checkpoint-based incremental fetching
 - Overlap window prevents missed events
-- Best for: Testing, firewalled environments, simple deployments
 
 **Advantages**:
 - No public URL or webhook setup required
 - Works behind strict firewalls
 - Simpler deployment (no ngrok needed)
-- Still reliable with frequent polling
 
 **Trade-offs**:
 - Higher API rate limit usage
 - Updates delayed by polling interval (5s default)
 - More frequent API calls
 
-**Recommended Settings**:
-```env
-DISABLE_WEBHOOKS=true
-PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
-```
-
 ## Components
 
 ### 1. Webhook Receivers (`src/app.py`)
 
-**Purpose**: Receive and validate incoming webhooks from Teamwork and Missive (when webhooks are enabled).
+**Purpose**: Receive and validate incoming webhooks from Teamwork and Missive.
 
 **Responsibilities**:
 - Accept HTTP POST requests
@@ -149,39 +136,39 @@ PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
 - Non-blocking: Events are queued, not processed synchronously
 - Idempotent: Safe to receive duplicate events
 - Fast: Minimal processing in webhook handler
-- Optional: Can be completely disabled for polling-only mode
+- Resilient: Automatic database reconnection
 
-### 2. Persistent Queue (`src/queue/spool_queue.py`)
+### 2. PostgreSQL Queue (`src/queue/postgres_queue.py`)
 
-**Purpose**: Reliable, crash-safe event queue with minimal complexity.
+**Purpose**: Reliable, crash-safe event queue stored in PostgreSQL.
 
 **Implementation**:
-- Spool directories: `data/queue/spool/{teamwork,missive}/`
-- One file per event ID: `<id>.evt`
-- On failure: rename to `<id>.retry` and retry after `SPOOL_RETRY_SECONDS`
-- Natural dedup via exclusive file creation
+- Table: `teamworkmissiveconnector.queue_items`
+- Status tracking: pending → processing → completed/failed
+- Batch dequeue for efficiency
+- Automatic retry with failure tracking
 
 **Guarantees**:
 - At-least-once delivery
-- FIFO ordering within a source
 - Survives crashes
 - No events lost
+- Transactional consistency
 
 ### 3. Worker Dispatcher (`src/workers/dispatcher.py`)
 
 **Purpose**: Process queued events in the background.
 
 **Responsibilities**:
-- Read from queue
+- Dequeue items in batches
 - Route to appropriate handler
-- Retry on failures with exponential backoff
-- Move poison messages to DLQ after max attempts
-- Update processing offset after success
+- Mark items completed/failed
+- Handle database reconnection
 
 **Key Features**:
 - Single-threaded (sufficient for load)
 - Graceful shutdown on SIGINT/SIGTERM
 - Continuous processing loop
+- Database resilience with automatic reconnect
 
 ### 4. Event Handlers
 
@@ -191,7 +178,8 @@ PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
 
 **Responsibilities**:
 - Extract task ID from various payload formats
-- Fetch full task data from API if needed
+- Fetch full task data from API with included resources
+- Upsert related entities (companies, users, teams, tags, projects, tasklists)
 - Parse task fields (tags, assignees, dates)
 - Handle deletion events
 - Convert to canonical `Task` model
@@ -202,11 +190,20 @@ PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
 
 **Responsibilities**:
 - Extract conversation/message IDs
-- Fetch full message data if needed
+- Fetch full conversation and message data
 - Parse email fields (addresses, body, attachments)
 - Handle deletion/trash events
+- Process comments
 - Convert to canonical `Email` model
-- Process attachments
+
+#### Craft Handler (`src/workers/handlers/craft_events.py`)
+
+**Purpose**: Parse and sync Craft documents.
+
+**Responsibilities**:
+- Fetch document content as markdown
+- Handle document metadata
+- Upsert to `craft_documents` table
 
 ### 5. API Clients
 
@@ -217,8 +214,7 @@ PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
 - Pagination support
 - Rate limit handling (429 → retry with backoff)
 - Server error retry (5xx → exponential backoff)
-- Fetch tasks updated since timestamp
-- Include completed tasks (controlled by `include_completed` parameter)
+- Fetch tasks with included resources
 
 #### Missive Client (`src/connectors/missive_client.py`)
 
@@ -227,28 +223,28 @@ PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
 - Cursor-based pagination
 - Rate limit handling
 - Server error retry
-- Fetch conversations updated since timestamp
-- Download attachments
+- Fetch conversations, messages, comments
 
-### 6. Database Abstraction (`src/db/`)
+#### Craft Client (`src/connectors/craft_client.py`)
 
-**Purpose**: Unified interface for multiple database backends.
+**Features**:
+- Multi-Document API support
+- Markdown content retrieval
+- Metadata fetching
+- No webhooks (polling only)
 
-**Interface** (`src/db/interface.py`):
-```python
-- upsert_email(email: Email)
-- upsert_task(task: Task)
-- mark_email_deleted(email_id: str)
-- mark_task_deleted(task_id: str)
-- get_checkpoint(source: str)
-- set_checkpoint(checkpoint: Checkpoint)
-```
+### 6. Database Implementation (`src/db/postgres_impl.py`)
 
-**Implementations**:
-- **Airtable** (`airtable_impl.py`): Uses pyairtable, caches record IDs
-- **PostgreSQL** (`postgres_impl.py`): Uses psycopg2, creates tables automatically
+**Purpose**: PostgreSQL-specific database operations.
 
-**Switching databases**: Change `DB_BACKEND` in `.env`, restart application.
+**Features**:
+- Upsert operations for all entity types
+- Relational structure with proper foreign keys
+- Junction table management (tags, assignees)
+- Checkpoint storage
+- Connection resilience
+
+**Schema**: Uses `teamwork`, `missive`, `teamworkmissiveconnector`, and `public` schemas.
 
 ### 7. Startup & Backfill (`src/startup.py`)
 
@@ -257,17 +253,16 @@ PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
 **Responsibilities**:
 - Start ngrok tunnel (local dev)
 - Display webhook URLs
-- Perform backfill for both sources
-- Maintain ngrok tunnel
+- Perform backfill for all sources (Teamwork, Missive, Craft)
 
 **Backfill Logic**:
-1. Load last checkpoint (timestamp + cursor)
+1. Load last checkpoint (timestamp)
 2. Subtract overlap window (default 120s) to handle clock skew
 3. Fetch all items updated since overlap time
 4. Enqueue each item
 5. Update checkpoint with latest timestamp
 
-**First Run**: If no checkpoint exists, backfill last 24 hours.
+**First Run**: If no checkpoint exists, backfill based on `*_PROCESS_AFTER` settings or defaults.
 
 ## Data Flow
 
@@ -275,24 +270,23 @@ PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
 
 1. **Receive**: Teamwork/Missive → ngrok → Flask app
 2. **Validate**: Check signature (if configured)
-3. **Enqueue**: Create `<id>.evt` in `data/queue/spool/{source}/`
+3. **Enqueue**: Insert into `queue_items` table
 4. **Respond**: Return 200 OK to webhook sender
 5. **Dequeue**: Worker reads from queue
-6. **Route**: Dispatcher routes to handler (Teamwork/Missive)
+6. **Route**: Dispatcher routes to handler
 7. **Parse**: Handler normalizes event data
 8. **Enrich**: Fetch full object from API if needed
-9. **Store**: Upsert to database via interface
-10. **Checkpoint**: Update last processed timestamp
-11. **Advance**: Worker advances queue offset
+9. **Store**: Upsert to database tables
+10. **Complete**: Mark queue item as completed
 
 ### Backfill Flow
 
-1. **Start**: Application startup or manual trigger
+1. **Start**: Application startup or periodic timer
 2. **Load**: Get last checkpoint from database
 3. **Fetch**: API query for items updated since checkpoint - overlap
 4. **Enqueue**: Each item added to queue
 5. **Process**: Normal queue processing handles items
-6. **Update**: Save new checkpoint after processing
+6. **Update**: Save new checkpoint after API success
 
 ## Reliability Features
 
@@ -302,8 +296,7 @@ PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
 - Safe to receive duplicate webhooks
 
 ### At-Least-Once Delivery
-- Queue persisted to disk with fsync
-- Offset only advanced after successful processing
+- Queue items marked completed only after successful processing
 - Crash during processing → item reprocessed on restart
 
 ### Overlap Window
@@ -312,14 +305,16 @@ PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
   - Race conditions (webhook arrives before API reflects change)
   - Network delays
 
-### Retry Logic
-- Failures rename to `.retry` and are retried approximately every `SPOOL_RETRY_SECONDS`
-- No DLQ; failures remain visible and reattempted periodically
+### Database Resilience
+- Lazy connection initialization
+- Automatic reconnection on failure
+- Exponential backoff for retries
+- Health check endpoint reports database status
 
 ### Graceful Shutdown
 - SIGINT/SIGTERM → finish current item, then exit
 - No partial writes
-- Clean offset state
+- Clean queue state
 
 ## Performance Characteristics
 
@@ -331,48 +326,26 @@ PERIODIC_BACKFILL_INTERVAL=5  # Adjust based on needs (1-60 seconds)
 ### Resource Usage
 - **CPU**: Very low (mostly I/O bound)
 - **Memory**: ~50-100 MB
-- **Disk**: Queue files grow slowly, compact automatically
 - **Network**: Minimal (only when processing events)
-
-### Scalability
-Current implementation is single-threaded and single-process, which is more than sufficient for the expected load. If load increases 100x, consider:
-- Multi-process workers reading from same queue
-- Redis or RabbitMQ instead of file queue
-- Database connection pooling
-- Async I/O for API calls
 
 ## Configuration
 
 ### Environment Variables
 
+See [ENV_VARIABLES.md](ENV_VARIABLES.md) for complete reference.
+
 **Key Settings**:
-- `DB_BACKEND`: `airtable` or `postgres`
-- `DISABLE_WEBHOOKS`: `true` or `false` (default: `false`)
-  - When `true`: No webhooks or ngrok tunnel, relies solely on periodic polling
-  - When `false`: Standard webhook-based operation with periodic backfill as backup
+- `PG_DSN`: PostgreSQL connection string (required)
+- `DISABLE_WEBHOOKS`: `true` for polling-only mode
 - `PERIODIC_BACKFILL_INTERVAL`: Polling interval in seconds
-  - Default: `5` seconds when `DISABLE_WEBHOOKS=true`
-  - Default: `60` seconds when `DISABLE_WEBHOOKS=false`
-  - Can be overridden manually for custom intervals
-- `MAX_QUEUE_ATTEMPTS`: Retry count before DLQ (default: 3)
 - `BACKFILL_OVERLAP_SECONDS`: Overlap window (default: 120)
-- `LOG_LEVEL`: `DEBUG`, `INFO`, `WARNING`, `ERROR`
 
-### Checkpoints
-Stored in `data/checkpoints/{source}.json`:
-```json
-{
-  "source": "teamwork",
-  "last_event_time": "2025-10-14T12:34:56.789Z",
-  "last_cursor": null
-}
-```
+### Database Schema
 
-### Spool Queue Files
-- `data/queue/spool/teamwork/*.evt`: Pending Teamwork events
-- `data/queue/spool/teamwork/*.retry`: Failed Teamwork events (will retry)
-- `data/queue/spool/missive/*.evt`: Pending Missive events
-- `data/queue/spool/missive/*.retry`: Failed Missive events (will retry)
+**teamworkmissiveconnector schema**:
+- `queue_items`: Event queue with status tracking
+- `checkpoints`: Last sync timestamp per source
+- `webhook_config`: Registered webhook IDs for cleanup
 
 ## Security
 
@@ -395,10 +368,11 @@ Stored in `data/checkpoints/{source}.json`:
 - JSON format in `logs/app.log`
 - Structured fields: timestamp, level, source, event_id
 - Console output: human-readable
+- Optional: Better Stack cloud logging
 
 ### Health Check
 - `GET /health` endpoint
-- Returns queue size and status
+- Returns queue size, database status, and timestamp
 
 ### Queue Inspection
 ```bash
@@ -408,27 +382,3 @@ python scripts/check_queue.py
 ### Manual Operations
 - Backfill: `python scripts/manual_backfill.py`
 - Check logs: `tail -f logs/app.log`
-- Inspect queue: `ls -la data/queue/spool/*/`
-- Check queue status: `python scripts/check_queue.py`
-
-## Future Enhancements
-
-### Possible Improvements
-1. **Metrics**: Add Prometheus metrics for queue depth, processing rate, errors
-2. **Alerting**: Notify on DLQ items or processing failures
-3. **Dashboard**: Web UI for queue status and recent events
-4. **Async Processing**: Use `asyncio` for concurrent API calls
-5. **Batch Processing**: Group database writes for efficiency
-6. **Attachment Storage**: Upload Missive attachments to S3 before Airtable
-7. **Webhook Registration**: Auto-register webhooks via API
-8. **Health Monitoring**: Periodic health checks of services
-
-### Migration to Production
-1. Deploy on persistent server (not local laptop)
-2. Use systemd/supervisor for process management
-3. Set up log rotation
-4. Configure monitoring/alerting
-5. Use production database (PostgreSQL recommended)
-6. Remove ngrok, use direct HTTPS endpoint
-7. Set up backup/restore procedures
-

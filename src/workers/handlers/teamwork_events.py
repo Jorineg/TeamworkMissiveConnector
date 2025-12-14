@@ -5,7 +5,6 @@ from typing import Dict, Any, Optional, List
 from src.db.models import Task
 from src.db.interface import DatabaseInterface
 from src.connectors.teamwork_client import TeamworkClient
-from src.connectors.label_categories import get_label_categories
 from src.logging_conf import logger
 from src import settings
 
@@ -139,12 +138,6 @@ class TeamworkEventHandler:
         # Parse tags using included data
         tags = self._resolve_tags(data.get("tags") or [], included.get("tags", {}))
         
-        # Categorize tags
-        categorized_tags = {}
-        if tags:
-            label_categories = get_label_categories()
-            categorized_tags = label_categories.categorize(tags)
-        
         # Parse assignees - handle users, companies, and teams
         assignees = self._resolve_assignees(
             data.get("assignees") or [],
@@ -191,7 +184,6 @@ class TeamworkEventHandler:
             description=data.get("description"),
             status=data.get("status") or data.get("state"),
             tags=tags,
-            categorized_tags=categorized_tags,
             assignees=assignees,
             created_by=created_by,
             updated_by=updated_by,

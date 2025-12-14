@@ -15,12 +15,7 @@ This document provides a comprehensive list of all environment variables used by
 | [`MISSIVE_WEBHOOK_SECRET`](#missive_webhook_secret) | ❌ No | Empty | Webhook signature validation | [↓](#missive_webhook_secret) |
 | [`MISSIVE_PROCESS_AFTER`](#missive_process_after) | ❌ No | None | Filter emails by received date | [↓](#missive_process_after) |
 | [`CRAFT_BASE_URL`](#craft_base_url) | ❌ No | - | Craft Multi-Document API URL | [↓](#craft_base_url) |
-| [`AIRTABLE_API_KEY`](#airtable_api_key) | ⚠️ If Airtable | - | Airtable authentication | [↓](#airtable_api_key) |
-| [`AIRTABLE_BASE_ID`](#airtable_base_id) | ⚠️ If Airtable | - | Airtable base identifier | [↓](#airtable_base_id) |
-| [`AIRTABLE_EMAILS_TABLE`](#airtable_emails_table) | ❌ No | `Emails` | Emails table name | [↓](#airtable_emails_table) |
-| [`AIRTABLE_TASKS_TABLE`](#airtable_tasks_table) | ❌ No | `Tasks` | Tasks table name | [↓](#airtable_tasks_table) |
-| [`DB_BACKEND`](#db_backend) | ❌ No | `airtable` | Database choice | [↓](#db_backend) |
-| [`PG_DSN`](#pg_dsn) | ⚠️ If Postgres | - | PostgreSQL connection | [↓](#pg_dsn) |
+| [`PG_DSN`](#pg_dsn) | ✅ Yes | - | PostgreSQL connection | [↓](#pg_dsn) |
 | [`NGROK_AUTHTOKEN`](#ngrok_authtoken) | ⚠️ If webhooks | - | ngrok tunnel (local dev) | [↓](#ngrok_authtoken) |
 | [`DISABLE_WEBHOOKS`](#disable_webhooks) | ❌ No | `false` | Enable/disable webhooks | [↓](#disable_webhooks) |
 | [`APP_PORT`](#app_port) | ❌ No | `5000` | Flask application port | [↓](#app_port) |
@@ -31,7 +26,6 @@ This document provides a comprehensive list of all environment variables used by
 | [`PERIODIC_BACKFILL_INTERVAL`](#periodic_backfill_interval) | ❌ No | `5`/`60` | Polling interval (seconds) | [↓](#periodic_backfill_interval) |
 | [`BACKFILL_OVERLAP_SECONDS`](#backfill_overlap_seconds) | ❌ No | `120` | Checkpoint overlap window | [↓](#backfill_overlap_seconds) |
 | [`MAX_QUEUE_ATTEMPTS`](#max_queue_attempts) | ❌ No | `3` | Max retry attempts | [↓](#max_queue_attempts) |
-| [`SPOOL_RETRY_SECONDS`](#spool_retry_seconds) | ❌ No | `60` | Retry wait time | [↓](#spool_retry_seconds) |
 
 **Legend:**
 - ✅ Always required
@@ -40,27 +34,12 @@ This document provides a comprehensive list of all environment variables used by
 
 ---
 
-## Table of Contents
-
-- [Required Variables](#required-variables)
-- [Optional Variables](#optional-variables)
-- [Database Configuration](#database-configuration)
-- [Queue Settings](#queue-settings)
-- [Date Filtering](#date-filtering)
-- [Example Configurations](#example-configurations)
-- [Troubleshooting](#troubleshooting)
-
----
-
 ## Required Variables
-
-These variables must be set for the connector to function:
 
 ### `TEAMWORK_BASE_URL`
 - **Description**: Your Teamwork installation URL
 - **Format**: URL without trailing slash
 - **Example**: `https://yourcompany.teamwork.com`
-- **How to get**: This is your Teamwork instance URL
 
 ### `TEAMWORK_API_KEY`
 - **Description**: API key for Teamwork authentication
@@ -74,21 +53,15 @@ These variables must be set for the connector to function:
 - **Example**: `abc123xyz456...`
 - **How to get**: Missive → Settings → API → Create Token
 
-### `AIRTABLE_API_KEY`
-- **Description**: Personal Access Token for Airtable (when using Airtable as database)
-- **Format**: String starting with `pat`
-- **Example**: `patAbc123Xyz456...`
-- **How to get**: https://airtable.com/create/tokens
-- **Required scopes**:
-  - `schema.bases:write` (to create tables)
-  - `data.records:write` (to write data)
-  - `data.records:read` (to read data)
-
-### `AIRTABLE_BASE_ID`
-- **Description**: ID of your Airtable base (when using Airtable as database)
-- **Format**: String starting with `app`
-- **Example**: `appAbc123Xyz456`
-- **How to get**: Visible in the URL when you open your base: `https://airtable.com/appXXXXXXXXXXXXXX/...`
+### `PG_DSN`
+- **Description**: PostgreSQL connection string
+- **Format**: PostgreSQL connection URI
+- **Example**: `postgresql://username:password@localhost:5432/teamwork_missive`
+- **Components**:
+  - `username`: PostgreSQL user
+  - `password`: User's password
+  - `localhost:5432`: Host and port
+  - `teamwork_missive`: Database name
 
 ---
 
@@ -100,73 +73,49 @@ These variables must be set for the connector to function:
 - **Description**: Port number for the Flask application
 - **Default**: `5000`
 - **Example**: `8080`
-- **When to change**: If port 5000 is already in use on your system
 
 #### `LOG_LEVEL`
 - **Description**: Logging verbosity level
 - **Default**: `INFO`
 - **Options**: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
-- **Example**: `DEBUG`
-- **When to use DEBUG**: When troubleshooting issues
 
 #### `TIMEZONE`
 - **Description**: IANA timezone name for timestamp display
 - **Default**: `Europe/Berlin`
-- **Format**: IANA timezone identifier
-- **Examples**: 
-  - `America/New_York`
-  - `Asia/Tokyo`
-  - `UTC`
-  - `Europe/London`
-- **Note**: Affects how timestamps are displayed in Airtable
+- **Examples**: `America/New_York`, `Asia/Tokyo`, `UTC`
 
 #### `BETTERSTACK_SOURCE_TOKEN`
 - **Description**: Source token for Betterstack cloud logging
-- **Default**: Not set (Betterstack logging disabled)
-- **Format**: String
-- **Example**: `your_betterstack_source_token_here`
+- **Default**: Not set (logging disabled)
 - **How to get**: https://logs.betterstack.com/ → Settings → Sources → Create Source
-- **When to use**: 
-  - Production deployments for centralized logging
-  - When you want cloud-based log monitoring and alerts
-  - To aggregate logs from multiple instances
-- **Note**: If not set, application logs only to console and local files
 
 #### `BETTERSTACK_INGEST_HOST`
-- **Description**: Custom ingestion host for Betterstack logging
-- **Default**: Not set (uses default `in.logs.betterstack.com`)
-- **Format**: Hostname string (without protocol)
-- **Example**: `custom.logs.betterstack.com`
-- **When to use**: 
-  - When using a custom Betterstack endpoint
-  - For self-hosted Betterstack instances
-- **Note**: Only relevant if `BETTERSTACK_SOURCE_TOKEN` is set
+- **Description**: Custom ingestion host for Betterstack
+- **Default**: Not set (uses `in.logs.betterstack.com`)
 
 ### Webhook Settings
 
 #### `NGROK_AUTHTOKEN`
-- **Description**: Authentication token for ngrok tunnel (local development only)
+- **Description**: Authentication token for ngrok tunnel (local development)
 - **Required for**: Webhook mode in local development
-- **Format**: String
-- **Example**: `2abc123XYZ...`
 - **How to get**: https://dashboard.ngrok.com/get-started/your-authtoken
-- **When NOT needed**: 
-  - When using polling-only mode (`DISABLE_WEBHOOKS=true`)
-  - In production with a public domain
+- **Not needed**: When using `DISABLE_WEBHOOKS=true`
 
 #### `TEAMWORK_WEBHOOK_SECRET`
 - **Description**: Secret for validating Teamwork webhook signatures
 - **Default**: Empty (no validation)
-- **Format**: String
-- **Example**: `my_secret_key_123`
-- **Note**: Currently optional as signature validation is not enforced
 
 #### `MISSIVE_WEBHOOK_SECRET`
 - **Description**: Secret for validating Missive webhook signatures
 - **Default**: Empty (no validation)
-- **Format**: String
-- **Example**: `my_secret_key_456`
-- **Note**: Currently optional as signature validation is not enforced
+
+#### `DISABLE_WEBHOOKS`
+- **Description**: Switch to polling-only mode
+- **Default**: `false`
+- **Options**: `true`, `false`, `1`, `0`, `yes`, `no`
+- **Effect**:
+  - `true`: No webhooks, frequent polling (default 5s interval)
+  - `false`: Webhooks enabled with backup polling (default 60s interval)
 
 ### Craft Settings
 
@@ -175,173 +124,76 @@ These variables must be set for the connector to function:
 - **Default**: Not set (Craft integration disabled)
 - **Format**: URL (without trailing slash)
 - **Example**: `https://connect.craft.do/links/FLzEdbunAos/api/v1`
-- **How to get**: Create a "Multi-Document Link" in Craft and get the API URL
-- **When NOT needed**: If you don't use Craft for documentation
-- **Note**: Craft doesn't support webhooks, so documents are synced via polling using `PERIODIC_BACKFILL_INTERVAL`
-- **Behavior**: 
-  - Uses checkpoint-based incremental sync (like Teamwork/Missive)
-  - Only documents modified since last checkpoint are fetched
-  - Document content is fetched as markdown
-  - Uses the same `PERIODIC_BACKFILL_INTERVAL` as Teamwork/Missive
-
-#### `DISABLE_WEBHOOKS`
-- **Description**: Switch to polling-only mode (no webhooks)
-- **Default**: `false`
-- **Options**: `true`, `false`, `1`, `0`, `yes`, `no`
-- **Example**: `true`
-- **When to use**:
-  - Testing and development
-  - Firewalled environments
-  - When you can't use ngrok
-  - When simpler setup is preferred
-- **Effect**: 
-  - `true`: No webhooks, frequent polling (default 5s interval)
-  - `false`: Webhooks enabled with backup polling (default 60s interval)
+- **Note**: Craft doesn't support webhooks, uses polling
 
 ### Backfill & Polling Settings
 
 #### `PERIODIC_BACKFILL_INTERVAL`
 - **Description**: Interval in seconds for periodic polling/backfill
-- **Default**: 
+- **Default**:
   - `5` when `DISABLE_WEBHOOKS=true`
   - `60` when `DISABLE_WEBHOOKS=false`
-- **Format**: Integer (seconds)
-- **Examples**: `10`, `30`, `120`
 - **Considerations**:
-  - **Lower values** = More real-time updates, more API calls
-  - **Higher values** = Fewer API calls, slower updates
-  - **Webhook mode**: Acts as safety net for missed webhooks
-  - **Polling mode**: Acts as primary sync mechanism
+  - Lower values = More real-time, more API calls
+  - Higher values = Fewer API calls, slower updates
 
 #### `BACKFILL_OVERLAP_SECONDS`
 - **Description**: Time overlap window when fetching updates
 - **Default**: `120` (2 minutes)
-- **Format**: Integer (seconds)
-- **Example**: `180`
-- **Purpose**: Prevents missed events due to clock skew or race conditions
-- **How it works**: When resuming from checkpoint, fetches items updated since (checkpoint - overlap)
+- **Purpose**: Prevents missed events due to clock skew
 
----
+### Database Resilience Settings
 
-## Database Configuration
+#### `DB_CONNECT_TIMEOUT`
+- **Description**: Connection timeout in seconds
+- **Default**: `10`
 
-### `DB_BACKEND`
-- **Description**: Which database backend to use
-- **Default**: `airtable`
-- **Options**: `airtable`, `postgres`
-- **Example**: `postgres`
-- **When to change**: When migrating from Airtable to PostgreSQL
+#### `DB_RECONNECT_DELAY`
+- **Description**: Initial delay between reconnect attempts
+- **Default**: `5`
 
-### `PG_DSN`
-- **Description**: PostgreSQL connection string (required when `DB_BACKEND=postgres`)
-- **Format**: PostgreSQL connection URI
-- **Example**: `postgresql://username:password@localhost:5432/teamwork_missive`
-- **Components**:
-  - `username`: PostgreSQL user
-  - `password`: User's password
-  - `localhost:5432`: Host and port (default PostgreSQL port)
-  - `teamwork_missive`: Database name
+#### `DB_MAX_RECONNECT_DELAY`
+- **Description**: Maximum delay with exponential backoff
+- **Default**: `60`
 
-### `AIRTABLE_EMAILS_TABLE`
-- **Description**: Name of the Emails table in Airtable
-- **Default**: `Emails`
-- **Example**: `EmailData`
-- **When to change**: If you want custom table names
+#### `DB_OPERATION_RETRIES`
+- **Description**: Retries for individual database operations
+- **Default**: `3`
 
-### `AIRTABLE_TASKS_TABLE`
-- **Description**: Name of the Tasks table in Airtable
-- **Default**: `Tasks`
-- **Example**: `TeamworkTasks`
-- **When to change**: If you want custom table names
+### Queue Settings
 
----
-
-## Queue Settings
-
-### `MAX_QUEUE_ATTEMPTS`
+#### `MAX_QUEUE_ATTEMPTS`
 - **Description**: Maximum retry attempts for failed queue items
 - **Default**: `3`
-- **Format**: Integer
-- **Example**: `5`
-- **Behavior**: After max attempts, items are moved to retry queue with `.retry` extension
 
-### `SPOOL_RETRY_SECONDS`
+#### `SPOOL_RETRY_SECONDS`
 - **Description**: Wait time before retrying failed items
 - **Default**: `60`
-- **Format**: Integer (seconds)
-- **Example**: `120`
-- **Note**: Failed items are retried after this interval
 
 ---
 
 ## Date Filtering
 
-These variables allow you to filter out old data from being synced to your database.
+Filter old data from being synced.
 
 ### `TEAMWORK_PROCESS_AFTER`
-- **Description**: Only process Teamwork tasks created on or after this date
-- **Default**: Not set (process all tasks)
-- **Format**: `DD.MM.YYYY`
-- **Example**: `23.04.2010`
-- **Behavior**:
-  - Tasks created **before** this date are **skipped** (marked as handled, not synced to database)
-  - Tasks created **on or after** this date are **synced normally**
-  - If not set, all tasks are processed
-- **Use case**: 
-  - Skip historical data you don't need
-  - Reduce database size
-  - Speed up initial sync
-  - Focus on recent projects only
-
-### `INCLUDE_COMPLETED_TASKS_ON_INITIAL_SYNC`
-- **Description**: Control whether completed tasks are included during the initial sync
-- **Default**: `true`
-- **Format**: Boolean (`true`, `false`, `1`, `0`, `yes`, `no`)
-- **Example**: `false`
-- **Behavior**:
-  - When `true`: Completed tasks are included during the first sync (default)
-  - When `false`: Only active tasks are synced during the first sync
-  - **Important**: This setting only affects the **initial sync** (when no checkpoint exists)
-  - Subsequent syncs **always include completed tasks** to capture task status changes
-- **Use case**: 
-  - Set to `false` if you only want to track active tasks
-  - Reduces initial sync time and database size
-  - Useful when you don't need historical completed task data
-- **API mapping**: Controls the `includeCompletedTasks` parameter in Teamwork API
-
-### `MISSIVE_PROCESS_AFTER`
-- **Description**: Only process Missive emails received on or after this date
-- **Default**: Not set (fetches last 30 days on first run)
+- **Description**: Only process tasks created on or after this date
+- **Default**: Not set (process all)
 - **Format**: `DD.MM.YYYY`
 - **Example**: `01.01.2020`
-- **Behavior**:
-  - On **first run**: API fetches conversations from this date onwards (reduces API calls)
-  - On **subsequent runs**: Uses checkpoint-based incremental fetching
-  - Emails received **before** this date are **not fetched** from API
-  - Additional filtering in handler ensures no old emails are synced
-  - If not set, defaults to last 30 days on first run
-- **Use case**: 
-  - Skip old email history
-  - Reduce API calls and database size
-  - Speed up initial sync significantly
-  - Focus on recent communications only
+- **Behavior**: Tasks created before this date are skipped
 
-**Important Notes on Date Filtering:**
-- **Teamwork**: 
-  - Initial backfill fetches tasks from the last 15 years via API
-  - Tasks created before `TEAMWORK_PROCESS_AFTER` are filtered after fetch (not saved to database)
-  - Use `INCLUDE_COMPLETED_TASKS_ON_INITIAL_SYNC=false` to exclude completed tasks during initial sync
-  - Subsequent syncs always include completed tasks to track status changes
-  - Ensures checkpoint advances properly
-- **Missive**: 
-  - Initial backfill only fetches conversations from `MISSIVE_PROCESS_AFTER` date onwards (or last 30 days if not set)
-  - Significantly reduces API calls on first run
-  - Additional handler-level filtering provides safety net
-  - Subsequent runs use checkpoint-based incremental fetching
-- Filtering is based on:
-  - **Teamwork**: Task `createdAt` field
-  - **Missive**: Message `delivered_at` or `created_at` field
-- Date format is strict: Must be `DD.MM.YYYY` (e.g., `23.04.2010`, not `23/04/2010` or `2010-04-23`)
+### `INCLUDE_COMPLETED_TASKS_ON_INITIAL_SYNC`
+- **Description**: Include completed tasks during initial sync
+- **Default**: `true`
+- **Format**: Boolean
+- **Note**: Subsequent syncs always include completed tasks
+
+### `MISSIVE_PROCESS_AFTER`
+- **Description**: Only process emails received on or after this date
+- **Default**: Not set (last 30 days on first run)
+- **Format**: `DD.MM.YYYY`
+- **Example**: `01.01.2020`
 
 ---
 
@@ -349,84 +201,56 @@ These variables allow you to filter out old data from being synced to your datab
 
 ### Minimal Setup (Webhook Mode)
 ```env
-# Required
 TEAMWORK_BASE_URL=https://yourcompany.teamwork.com
 TEAMWORK_API_KEY=your_key_here
 MISSIVE_API_TOKEN=your_token_here
-AIRTABLE_API_KEY=your_key_here
-AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
+PG_DSN=postgresql://user:pass@localhost:5432/database
 NGROK_AUTHTOKEN=your_token_here
 ```
 
 ### Minimal Setup (Polling-Only Mode)
 ```env
-# Required
 TEAMWORK_BASE_URL=https://yourcompany.teamwork.com
 TEAMWORK_API_KEY=your_key_here
 MISSIVE_API_TOKEN=your_token_here
-AIRTABLE_API_KEY=your_key_here
-AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
-
-# Disable webhooks
+PG_DSN=postgresql://user:pass@localhost:5432/database
 DISABLE_WEBHOOKS=true
 ```
 
-### Production Setup with PostgreSQL
+### Production Setup
 ```env
-# Required
 TEAMWORK_BASE_URL=https://yourcompany.teamwork.com
 TEAMWORK_API_KEY=your_key_here
 MISSIVE_API_TOKEN=your_token_here
+PG_DSN=postgresql://user:pass@localhost:5432/database
 
-# Database
-DB_BACKEND=postgres
-PG_DSN=postgresql://user:pass@localhost:5432/teamwork_missive
+# Optional integrations
+CRAFT_BASE_URL=https://connect.craft.do/links/YOUR_LINK_ID/api/v1
 
-# Optional
+# Settings
 TIMEZONE=America/New_York
 LOG_LEVEL=INFO
 PERIODIC_BACKFILL_INTERVAL=60
 
-# Craft integration (optional)
-CRAFT_BASE_URL=https://connect.craft.do/links/YOUR_LINK_ID/api/v1
-
-# Betterstack logging (optional)
+# Cloud logging
 BETTERSTACK_SOURCE_TOKEN=your_betterstack_token_here
 ```
 
 ### Setup with Date Filtering
 ```env
-# Required
 TEAMWORK_BASE_URL=https://yourcompany.teamwork.com
 TEAMWORK_API_KEY=your_key_here
 MISSIVE_API_TOKEN=your_token_here
-AIRTABLE_API_KEY=your_key_here
-AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
+PG_DSN=postgresql://user:pass@localhost:5432/database
 
-# Date Filtering - only sync data from 2020 onwards
+# Only sync data from 2020 onwards
 TEAMWORK_PROCESS_AFTER=01.01.2020
 MISSIVE_PROCESS_AFTER=01.01.2020
 
 # Only sync active tasks on initial sync
 INCLUDE_COMPLETED_TASKS_ON_INITIAL_SYNC=false
 
-# Disable webhooks for simpler setup
 DISABLE_WEBHOOKS=true
-```
-
-### Development Setup with Debug Logging
-```env
-# Required
-TEAMWORK_BASE_URL=https://yourcompany.teamwork.com
-TEAMWORK_API_KEY=your_key_here
-MISSIVE_API_TOKEN=your_token_here
-AIRTABLE_API_KEY=your_key_here
-AIRTABLE_BASE_ID=appXXXXXXXXXXXXXX
-
-# Development settings
-LOG_LEVEL=DEBUG
-DISABLE_WEBHOOKS=true
-PERIODIC_BACKFILL_INTERVAL=10
 ```
 
 ---
@@ -434,28 +258,17 @@ PERIODIC_BACKFILL_INTERVAL=10
 ## Troubleshooting
 
 ### Invalid Date Format Error
-If you see errors about date parsing when using `TEAMWORK_PROCESS_AFTER` or `MISSIVE_PROCESS_AFTER`:
 - Ensure format is exactly `DD.MM.YYYY`
-- Use leading zeros for single digits: `01.01.2020` not `1.1.2020`
-- Use dots (`.`), not slashes (`/`) or dashes (`-`)
-
-### All Items Being Filtered
-If all your items are being filtered out:
-- Check that your threshold date is not in the future
-- Verify the date format is correct
-- Check logs for "filtered" messages to confirm filtering is working
-- Try removing the filter variables temporarily to test
+- Use leading zeros: `01.01.2020` not `1.1.2020`
+- Use dots (`.`), not slashes or dashes
 
 ### Webhooks Not Working
-If webhooks aren't arriving:
-1. Check `NGROK_AUTHTOKEN` is set correctly
-2. Verify ngrok tunnel is running (check startup logs)
-3. Consider using `DISABLE_WEBHOOKS=true` as alternative
+1. Check `NGROK_AUTHTOKEN` is set
+2. Verify ngrok tunnel is running
+3. Consider using `DISABLE_WEBHOOKS=true`
 
 ### Database Connection Issues
-If you can't connect to the database:
-- **Airtable**: Verify `AIRTABLE_API_KEY` has correct scopes
-- **PostgreSQL**: Check `PG_DSN` format and credentials
+- Verify `PG_DSN` format and credentials
 - Check logs for specific error messages
 
 ---
@@ -465,5 +278,3 @@ If you can't connect to the database:
 - [README.md](README.md) - Project overview and quick start
 - [SETUP.md](SETUP.md) - Detailed setup instructions
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Technical architecture details
-- [docs/label_categorization.md](docs/label_categorization.md) - Label categorization feature
-
