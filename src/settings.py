@@ -50,8 +50,8 @@ DISABLE_WEBHOOKS = os.getenv("DISABLE_WEBHOOKS", "false").lower() in ("true", "1
 
 # Periodic backfill settings
 # Default: 5 seconds when webhooks disabled, 60 seconds when enabled
-_default_backfill_interval = "5" if DISABLE_WEBHOOKS else "60"
-PERIODIC_BACKFILL_INTERVAL = int(os.getenv("PERIODIC_BACKFILL_INTERVAL", _default_backfill_interval))
+_default_backfill_interval = 5 if DISABLE_WEBHOOKS else 60
+PERIODIC_BACKFILL_INTERVAL = int(os.getenv("PERIODIC_BACKFILL_INTERVAL") or _default_backfill_interval)
 
 # PostgreSQL settings
 PG_DSN = os.getenv("PG_DSN")
