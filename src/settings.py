@@ -36,7 +36,8 @@ MISSIVE_WEBHOOK_SECRET = os.getenv("MISSIVE_WEBHOOK_SECRET", "")
 MISSIVE_PROCESS_AFTER = os.getenv("MISSIVE_PROCESS_AFTER")  # Format: DD.MM.YYYY
 
 # Craft settings
-CRAFT_BASE_URL = os.getenv("CRAFT_BASE_URL", "").rstrip("/")  # Multi-document API URL
+CRAFT_BASE_URL = os.getenv("CRAFT_BASE_URL", "").rstrip("/")
+CRAFT_API_MODE = os.getenv("CRAFT_API_MODE", "multi_document")  # "full_space" or "multi_document"
 
 # Betterstack settings
 BETTERSTACK_SOURCE_TOKEN = os.getenv("BETTERSTACK_SOURCE_TOKEN")

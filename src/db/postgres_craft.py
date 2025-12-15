@@ -18,6 +18,10 @@ class PostgresCraftOps:
                 - title: Document title
                 - markdown_content: Full markdown content (optional)
                 - isDeleted: Whether document is deleted
+                - folder_path: Full folder path (optional)
+                - folder_id: Direct parent folder ID (optional)
+                - location: Built-in location (optional)
+                - daily_note_date: Date for daily notes (optional)
                 - lastModifiedAt: Last modification timestamp (optional)
                 - createdAt: Creation timestamp (optional)
         """
@@ -31,14 +35,19 @@ class PostgresCraftOps:
                 cur.execute("""
                     INSERT INTO craft_documents (
                         id, title, markdown_content, is_deleted,
+                        folder_path, folder_id, location, daily_note_date,
                         craft_created_at, craft_last_modified_at, raw_data
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         title = EXCLUDED.title,
                         markdown_content = EXCLUDED.markdown_content,
                         is_deleted = EXCLUDED.is_deleted,
+                        folder_path = EXCLUDED.folder_path,
+                        folder_id = EXCLUDED.folder_id,
+                        location = EXCLUDED.location,
+                        daily_note_date = EXCLUDED.daily_note_date,
                         craft_created_at = COALESCE(EXCLUDED.craft_created_at, craft_documents.craft_created_at),
                         craft_last_modified_at = EXCLUDED.craft_last_modified_at,
                         raw_data = EXCLUDED.raw_data,
@@ -48,6 +57,10 @@ class PostgresCraftOps:
                     doc_data.get("title"),
                     doc_data.get("markdown_content"),
                     doc_data.get("isDeleted", False),
+                    doc_data.get("folder_path"),
+                    doc_data.get("folder_id"),
+                    doc_data.get("location"),
+                    doc_data.get("daily_note_date"),
                     self._parse_dt(doc_data.get("createdAt")),
                     self._parse_dt(doc_data.get("lastModifiedAt")),
                     Json(doc_data)
@@ -78,14 +91,19 @@ class PostgresCraftOps:
                     cur.execute("""
                         INSERT INTO craft_documents (
                             id, title, markdown_content, is_deleted,
+                            folder_path, folder_id, location, daily_note_date,
                             craft_created_at, craft_last_modified_at, raw_data
                         ) VALUES (
-                            %s, %s, %s, %s, %s, %s, %s
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                         )
                         ON CONFLICT (id) DO UPDATE SET
                             title = EXCLUDED.title,
                             markdown_content = EXCLUDED.markdown_content,
                             is_deleted = EXCLUDED.is_deleted,
+                            folder_path = EXCLUDED.folder_path,
+                            folder_id = EXCLUDED.folder_id,
+                            location = EXCLUDED.location,
+                            daily_note_date = EXCLUDED.daily_note_date,
                             craft_created_at = COALESCE(EXCLUDED.craft_created_at, craft_documents.craft_created_at),
                             craft_last_modified_at = EXCLUDED.craft_last_modified_at,
                             raw_data = EXCLUDED.raw_data,
@@ -95,6 +113,10 @@ class PostgresCraftOps:
                         doc_data.get("title"),
                         doc_data.get("markdown_content"),
                         doc_data.get("isDeleted", False),
+                        doc_data.get("folder_path"),
+                        doc_data.get("folder_id"),
+                        doc_data.get("location"),
+                        doc_data.get("daily_note_date"),
                         self._parse_dt(doc_data.get("createdAt")),
                         self._parse_dt(doc_data.get("lastModifiedAt")),
                         Json(doc_data)

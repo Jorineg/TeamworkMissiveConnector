@@ -1,27 +1,36 @@
-"""Craft Multi-Document API client."""
+"""Craft API client supporting both Multi-Document and Full Space APIs."""
 import time
 from typing import List, Dict, Any, Optional
 import requests
 
 from src import settings
 from src.logging_conf import logger
+from src.connectors.craft_markdown_parser import parse_craft_markdown
 
 
 class CraftClient:
-    """Client for Craft Multi-Document API.
+    """Client for Craft Connect API.
     
-    This client uses the Craft Connect API for multi-document access.
+    Supports two modes:
+    - multi_document: Free tier, limited to shared documents
+    - full_space: Paid tier, full space access with folders
+    
     The base URL should be in the format:
     https://connect.craft.do/links/{linkId}/api/v1
     """
     
     def __init__(self):
         self.base_url = settings.CRAFT_BASE_URL
+        self.api_mode = settings.CRAFT_API_MODE
         self.session = requests.Session()
     
     def is_configured(self) -> bool:
         """Check if Craft API is configured."""
         return bool(self.base_url)
+    
+    def is_full_space_mode(self) -> bool:
+        """Check if using full space API mode."""
+        return self.api_mode == "full_space"
     
     def get_documents(self, fetch_metadata: bool = True) -> List[Dict[str, Any]]:
         """
@@ -192,6 +201,163 @@ class CraftClient:
             logger.error(f"Error searching Craft documents: {e}", exc_info=True)
         
         return []
+    
+    # ========== Full Space API Methods (Paid Tier) ==========
+    
+    def get_folders(self) -> List[Dict[str, Any]]:
+        """
+        Get all folders in the space (Full Space API only).
+        
+        Returns folder tree including built-in locations (unsorted, trash, templates).
+        """
+        if not self.is_configured():
+            return []
+        
+        try:
+            response = self._request("GET", "/folders")
+            if response and "items" in response:
+                folders = response["items"]
+                logger.info(f"Fetched {len(folders)} top-level folders from Craft")
+                return folders
+        except Exception as e:
+            logger.error(f"Error fetching folders from Craft: {e}", exc_info=True)
+        
+        return []
+    
+    def get_documents_by_location(
+        self, 
+        location: Optional[str] = None, 
+        folder_id: Optional[str] = None,
+        fetch_metadata: bool = True
+    ) -> List[Dict[str, Any]]:
+        """
+        Get documents in a specific location or folder (Full Space API).
+        
+        Args:
+            location: Built-in location ('unsorted', 'templates', 'daily_notes')
+            folder_id: Specific folder ID
+            fetch_metadata: Include metadata
+        """
+        if not self.is_configured():
+            return []
+        
+        try:
+            params = {"fetchMetadata": str(fetch_metadata).lower()}
+            if location:
+                params["location"] = location
+            if folder_id:
+                params["folderId"] = folder_id
+            
+            response = self._request("GET", "/documents", params=params)
+            if response and "items" in response:
+                return response["items"]
+        except Exception as e:
+            logger.error(f"Error fetching documents by location: {e}", exc_info=True)
+        
+        return []
+    
+    def get_all_documents_with_paths(self, fetch_metadata: bool = True) -> List[Dict[str, Any]]:
+        """
+        Get all documents with folder paths (Full Space API).
+        
+        Recursively traverses all folders and built-in locations.
+        Each document gets: folder_path, folder_id, location, daily_note_date
+        
+        Returns:
+            List of documents with path info and parsed markdown content
+        """
+        if not self.is_configured():
+            return []
+        
+        all_documents = []
+        
+        # 1. Fetch from built-in locations
+        for location in ['unsorted', 'templates', 'daily_notes']:
+            docs = self.get_documents_by_location(location=location, fetch_metadata=fetch_metadata)
+            for doc in docs:
+                doc['folder_path'] = f'/{location}'
+                doc['folder_id'] = None
+                doc['location'] = location
+                # Extract daily_note_date if present
+                doc['daily_note_date'] = doc.get('dailyNoteDate')
+            all_documents.extend(docs)
+            logger.debug(f"Fetched {len(docs)} documents from /{location}")
+        
+        # 2. Get folder tree and traverse recursively
+        folders = self.get_folders()
+        
+        def traverse_folder(folder: Dict, path: str = ""):
+            folder_id = folder.get('id')
+            folder_name = folder.get('name', 'Unknown')
+            
+            # Skip built-in locations (already handled above)
+            if folder_id in ('unsorted', 'trash', 'templates'):
+                return
+            
+            current_path = f"{path}/{folder_name}"
+            
+            # Fetch documents in this folder
+            docs = self.get_documents_by_location(folder_id=folder_id, fetch_metadata=fetch_metadata)
+            for doc in docs:
+                doc['folder_path'] = current_path
+                doc['folder_id'] = folder_id
+                doc['location'] = None
+                doc['daily_note_date'] = doc.get('dailyNoteDate')
+            all_documents.extend(docs)
+            logger.debug(f"Fetched {len(docs)} documents from {current_path}")
+            
+            # Small delay to avoid rate limiting
+            if docs:
+                time.sleep(0.1)
+            
+            # Recurse into subfolders
+            for subfolder in folder.get('folders', []):
+                traverse_folder(subfolder, current_path)
+        
+        for folder in folders:
+            traverse_folder(folder)
+        
+        logger.info(f"Fetched {len(all_documents)} total documents from Craft (Full Space)")
+        
+        # 3. Fetch content for each document
+        for doc in all_documents:
+            if doc.get("isDeleted", False):
+                doc["markdown_content"] = None
+                continue
+            
+            doc_id = doc.get("id")
+            if doc_id:
+                raw_content = self.get_document_content(doc_id, fetch_metadata=fetch_metadata)
+                # Parse to clean markdown
+                doc["markdown_content"] = parse_craft_markdown(raw_content) if raw_content else None
+                time.sleep(0.1)
+        
+        return all_documents
+    
+    def sync_all_documents(self, fetch_metadata: bool = True) -> List[Dict[str, Any]]:
+        """
+        Main entry point for syncing documents based on API mode.
+        
+        - full_space mode: Uses get_all_documents_with_paths()
+        - multi_document mode: Uses get_all_documents_with_content()
+        
+        Returns documents with markdown_content and (for full_space) path info.
+        """
+        if self.is_full_space_mode():
+            return self.get_all_documents_with_paths(fetch_metadata=fetch_metadata)
+        else:
+            # Multi-document mode (free tier)
+            docs = self.get_all_documents_with_content(fetch_metadata=fetch_metadata)
+            # Parse markdown for multi-document mode too
+            for doc in docs:
+                if doc.get("markdown_content"):
+                    doc["markdown_content"] = parse_craft_markdown(doc["markdown_content"])
+                # Set empty path fields for consistency
+                doc.setdefault('folder_path', None)
+                doc.setdefault('folder_id', None)
+                doc.setdefault('location', None)
+                doc.setdefault('daily_note_date', None)
+            return docs
     
     def _request(
         self,
