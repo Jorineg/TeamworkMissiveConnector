@@ -15,6 +15,7 @@ services:
       
       # === OPTIONAL: Craft Integration ===
       - CRAFT_BASE_URL=${CRAFT_BASE_URL:-}
+      - CRAFT_API_MODE=${CRAFT_API_MODE:-multi_document}
       
       # === OPTIONAL: Webhooks ===
       - DISABLE_WEBHOOKS=${DISABLE_WEBHOOKS:-false}
