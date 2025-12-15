@@ -1,6 +1,6 @@
 """Parser to convert Craft's XML-Markdown mix to clean Markdown."""
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict
 from src.logging_conf import logger
 
 
@@ -32,8 +32,8 @@ def _parse_content(content: str) -> str:
     # Process simple inline tags
     content = _process_simple_tags(content)
     
-    # Clean up whitespace
-    content = _clean_whitespace(content)
+    # Clean up whitespace and formatting
+    content = _clean_formatting(content)
     
     return content.strip()
 
@@ -74,13 +74,8 @@ def _process_collections(content: str) -> str:
         props_raw = match.group(2).strip()
         items_content = match.group(3)
         
-        # Parse property names
         props = [p.strip() for p in props_raw.split(',') if p.strip()]
-        
-        # Parse collection items
         items = _parse_collection_items(items_content, props)
-        
-        # Build markdown table
         return _build_collection_table(title, props, items)
     
     return pattern.sub(replace_collection, content)
@@ -89,35 +84,24 @@ def _process_collections(content: str) -> str:
 def _parse_collection_items(content: str, props: List[str]) -> List[Dict]:
     """Parse <collectionItem> elements."""
     items = []
-    pattern = re.compile(
-        r'<collectionItem>\s*(.*?)\s*</collectionItem>',
-        re.DOTALL
-    )
+    pattern = re.compile(r'<collectionItem>\s*(.*?)\s*</collectionItem>', re.DOTALL)
     
     for match in pattern.finditer(content):
         item_content = match.group(1)
         item = {'_title': '', '_content': '', '_props': {}}
         
-        # Extract title
         title_match = re.search(r'<title>([^<]*)</title>', item_content)
         if title_match:
             item['_title'] = title_match.group(1).strip()
         
-        # Extract properties
         prop_pattern = re.compile(r'<property name="([^"]+)">([^<]*)</property>')
         for prop_match in prop_pattern.finditer(item_content):
-            prop_name = prop_match.group(1)
-            prop_value = prop_match.group(2).strip()
-            item['_props'][prop_name] = prop_value
+            item['_props'][prop_match.group(1)] = prop_match.group(2).strip()
         
-        # Extract nested content
         content_match = re.search(r'<content>(.*?)</content>', item_content, re.DOTALL)
         if content_match:
-            nested = content_match.group(1).strip()
-            # Recursively process nested content
-            item['_content'] = _process_simple_tags(nested)
+            item['_content'] = _process_simple_tags(content_match.group(1).strip())
         
-        # Skip empty items
         if item['_title'] or any(item['_props'].values()):
             items.append(item)
     
@@ -131,28 +115,23 @@ def _build_collection_table(title: str, props: List[str], items: List[Dict]) -> 
     
     lines = [f"## {title}\n"]
     
-    # Header row
     header = "| Title | " + " | ".join(props) + " |"
     separator = "|" + "---|" * (len(props) + 1)
     lines.append(header)
     lines.append(separator)
     
-    # Data rows + nested content
     nested_contents = []
     for item in items:
         row_cells = [_escape_table_cell(item['_title'])]
         for prop in props:
-            val = item['_props'].get(prop, '')
-            row_cells.append(_escape_table_cell(val))
+            row_cells.append(_escape_table_cell(item['_props'].get(prop, '')))
         lines.append("| " + " | ".join(row_cells) + " |")
         
-        # Collect nested content for after the table
         if item['_content']:
             nested_contents.append((item['_title'], item['_content']))
     
     lines.append("")
     
-    # Add nested content as subsections
     for item_title, item_content in nested_contents:
         if item_title:
             lines.append(f"### {item_title}\n")
@@ -171,19 +150,14 @@ def _escape_table_cell(text: str) -> str:
 
 def _process_nested_pages(content: str) -> str:
     """Convert nested <page> elements to Markdown sections."""
-    # Match nested pages with various styles
     pattern = re.compile(
-        r'<page[^>]*>\s*'
-        r'<pageTitle>([^<]*)</pageTitle>\s*'
-        r'<content>(.*?)</content>\s*'
-        r'</page>',
+        r'<page[^>]*>\s*<pageTitle>([^<]*)</pageTitle>\s*<content>(.*?)</content>\s*</page>',
         re.DOTALL
     )
     
     def replace_page(match):
         title = match.group(1).strip()
         inner = match.group(2).strip()
-        # Recursively process inner content
         inner = _process_nested_pages(inner)
         inner = _process_simple_tags(inner)
         return f"### {title}\n\n{inner}\n"
@@ -201,13 +175,12 @@ def _process_simple_tags(content: str) -> str:
     )
     
     # <highlight color="...">text</highlight> -> **text**
-    content = re.sub(
-        r'<highlight[^>]*>([^<]*)</highlight>',
-        r'**\1**',
-        content
-    )
+    content = re.sub(r'<highlight[^>]*>([^<]*)</highlight>', r'**\1**', content)
     
-    # Remove remaining unknown tags but keep content
+    # <comment id="...">text</comment> -> remove entirely (or keep text only)
+    content = re.sub(r'<comment[^>]*>[^<]*</comment>', '', content)
+    
+    # Remove remaining XML tags but keep content
     content = re.sub(r'<pageTitle>([^<]*)</pageTitle>', r'# \1', content)
     content = re.sub(r'<content>|</content>', '', content)
     content = re.sub(r'<page[^>]*>|</page>', '', content)
@@ -215,13 +188,28 @@ def _process_simple_tags(content: str) -> str:
     return content
 
 
-def _clean_whitespace(content: str) -> str:
-    """Clean up excessive whitespace."""
-    # Replace multiple blank lines with double newline
+def _clean_formatting(content: str) -> str:
+    """Clean up whitespace and fix formatting issues."""
+    # Remove leading spaces/indentation from lines (Craft adds 4-space indent)
+    content = re.sub(r'^[ \t]+', '', content, flags=re.MULTILINE)
+    
+    # Fix horizontal rules: ******* or ***** -> ---
+    content = re.sub(r'^\*{3,}$', '---', content, flags=re.MULTILINE)
+    
+    # Fix broken bold: ****text**** -> **text**
+    # Multiple consecutive asterisks around text
+    content = re.sub(r'\*{2,}([^*\n]+)\*{2,}', r'**\1**', content)
+    
+    # Clean up empty bold markers: **** -> (nothing)
+    content = re.sub(r'\*{4,}', '', content)
+    
+    # Replace multiple blank lines with single blank line
     content = re.sub(r'\n{3,}', '\n\n', content)
+    
     # Remove trailing whitespace on lines
     content = re.sub(r'[ \t]+$', '', content, flags=re.MULTILINE)
-    # Ensure proper spacing around headers
-    content = re.sub(r'\n(#{1,6} )', r'\n\n\1', content)
+    
+    # Ensure headers have blank line before (but not at start)
+    content = re.sub(r'([^\n])\n(#{1,6} )', r'\1\n\n\2', content)
+    
     return content
-
