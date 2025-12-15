@@ -288,12 +288,8 @@ class StartupManager:
     def _backfill_craft(self):
         """Backfill Craft documents.
         
-        Uses sync_all_documents() which handles both API modes:
-        - full_space: Recursively traverses folders, gets paths
-        - multi_document: Gets documents directly
-        
-        Documents are stored directly (not queued) since the client
-        already fetches and parses all content.
+        Fetches document list with paths (fast, no content), then enqueues
+        each document for the worker to fetch content and store.
         """
         if not self.craft_client.is_configured():
             logger.debug("Craft not configured, skipping backfill")
@@ -305,8 +301,8 @@ class StartupManager:
         # Get last checkpoint
         checkpoint = self.db.get_checkpoint("craft")
         
-        # Fetch all documents with content and path info
-        documents = self.craft_client.sync_all_documents(fetch_metadata=True)
+        # Fetch document list with paths (no content yet - that's done by worker)
+        documents = self.craft_client.get_document_list(fetch_metadata=True)
         
         if not documents:
             logger.info("No Craft documents found")
@@ -333,14 +329,34 @@ class StartupManager:
         else:
             logger.info("First run: syncing all Craft documents")
         
-        logger.info(f"Found {len(documents)} Craft documents to sync")
+        logger.info(f"Found {len(documents)} Craft documents to enqueue")
         
-        # Upsert documents directly (content already fetched and parsed)
+        # Enqueue each document with path metadata in payload
         for doc in documents:
             try:
-                self.db.upsert_craft_document(doc)
+                doc_id = str(doc.get("id", ""))
+                if not doc_id:
+                    continue
+                
+                # Include path info in payload so worker doesn't need to re-fetch
+                item = QueueItem.create(
+                    source="craft",
+                    event_type="document.backfill",
+                    external_id=doc_id,
+                    payload={
+                        "title": doc.get("title"),
+                        "folder_path": doc.get("folder_path"),
+                        "folder_id": doc.get("folder_id"),
+                        "location": doc.get("location"),
+                        "daily_note_date": doc.get("daily_note_date"),
+                        "lastModifiedAt": doc.get("lastModifiedAt"),
+                        "createdAt": doc.get("createdAt"),
+                        "isDeleted": doc.get("isDeleted", False),
+                    }
+                )
+                self.queue.enqueue(item)
             except Exception as e:
-                logger.error(f"Error upserting Craft document {doc.get('id')}: {e}", exc_info=True)
+                logger.error(f"Error enqueueing Craft document: {e}", exc_info=True)
         
         # Update checkpoint to current time
         latest_time = datetime.now(timezone.utc)

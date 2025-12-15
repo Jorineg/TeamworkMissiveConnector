@@ -256,15 +256,14 @@ class CraftClient:
         
         return []
     
-    def get_all_documents_with_paths(self, fetch_metadata: bool = True) -> List[Dict[str, Any]]:
+    def get_document_list_with_paths(self, fetch_metadata: bool = True) -> List[Dict[str, Any]]:
         """
-        Get all documents with folder paths (Full Space API).
+        Get document list with folder paths but WITHOUT content (Full Space API).
         
-        Recursively traverses all folders and built-in locations.
+        Fast operation - only fetches document metadata + paths.
+        Use this for backfill, then fetch content per-document in worker.
+        
         Each document gets: folder_path, folder_id, location, daily_note_date
-        
-        Returns:
-            List of documents with path info and parsed markdown content
         """
         if not self.is_configured():
             return []
@@ -278,7 +277,6 @@ class CraftClient:
                 doc['folder_path'] = f'/{location}'
                 doc['folder_id'] = None
                 doc['location'] = location
-                # Extract daily_note_date if present
                 doc['daily_note_date'] = doc.get('dailyNoteDate')
             all_documents.extend(docs)
             logger.debug(f"Fetched {len(docs)} documents from /{location}")
@@ -290,8 +288,8 @@ class CraftClient:
             folder_id = folder.get('id')
             folder_name = folder.get('name', 'Unknown')
             
-            # Skip built-in locations (already handled above)
-            if folder_id in ('unsorted', 'trash', 'templates'):
+            # Skip built-in locations (already handled above via location param)
+            if folder_id in ('unsorted', 'trash', 'templates', 'daily_notes'):
                 return
             
             current_path = f"{path}/{folder_name}"
@@ -317,42 +315,60 @@ class CraftClient:
         for folder in folders:
             traverse_folder(folder)
         
-        logger.info(f"Fetched {len(all_documents)} total documents from Craft (Full Space)")
-        
-        # 3. Fetch content for each document
-        for doc in all_documents:
-            if doc.get("isDeleted", False):
-                doc["markdown_content"] = None
-                continue
-            
-            doc_id = doc.get("id")
-            if doc_id:
-                raw_content = self.get_document_content(doc_id, fetch_metadata=fetch_metadata)
-                # Parse to clean markdown
-                doc["markdown_content"] = parse_craft_markdown(raw_content) if raw_content else None
-                time.sleep(0.1)
-        
+        logger.info(f"Fetched {len(all_documents)} document metadata from Craft (Full Space)")
         return all_documents
     
-    def sync_all_documents(self, fetch_metadata: bool = True) -> List[Dict[str, Any]]:
+    def get_document_with_content(self, doc_id: str, path_info: Optional[Dict] = None) -> Optional[Dict[str, Any]]:
         """
-        Main entry point for syncing documents based on API mode.
+        Get a single document with its content, optionally with pre-fetched path info.
         
-        - full_space mode: Uses get_all_documents_with_paths()
-        - multi_document mode: Uses get_all_documents_with_content()
+        Args:
+            doc_id: Document ID
+            path_info: Optional dict with folder_path, folder_id, location, daily_note_date
         
-        Returns documents with markdown_content and (for full_space) path info.
+        Returns:
+            Document dict with markdown_content, or None if failed
+        """
+        if not self.is_configured():
+            return None
+        
+        # Get metadata if not provided
+        if path_info:
+            doc = dict(path_info)
+            doc['id'] = doc_id
+        else:
+            # Fallback: fetch from API (less efficient)
+            if self.is_full_space_mode():
+                docs = self.get_document_list_with_paths(fetch_metadata=True)
+            else:
+                docs = self.get_documents(fetch_metadata=True)
+            
+            doc = next((d for d in docs if d.get('id') == doc_id), None)
+            if not doc:
+                logger.warning(f"Document {doc_id} not found")
+                return None
+        
+        # Fetch content
+        raw_content = self.get_document_content(doc_id, fetch_metadata=True)
+        doc['markdown_content'] = parse_craft_markdown(raw_content) if raw_content else None
+        
+        return doc
+    
+    def get_document_list(self, fetch_metadata: bool = True) -> List[Dict[str, Any]]:
+        """
+        Get document list based on API mode (without content).
+        
+        - full_space mode: Returns docs with folder paths
+        - multi_document mode: Returns docs without paths
+        
+        Use for backfill enumeration, then fetch content per-doc in worker.
         """
         if self.is_full_space_mode():
-            return self.get_all_documents_with_paths(fetch_metadata=fetch_metadata)
+            return self.get_document_list_with_paths(fetch_metadata=fetch_metadata)
         else:
-            # Multi-document mode (free tier)
-            docs = self.get_all_documents_with_content(fetch_metadata=fetch_metadata)
-            # Parse markdown for multi-document mode too
+            docs = self.get_documents(fetch_metadata=fetch_metadata)
+            # Add empty path fields for consistency
             for doc in docs:
-                if doc.get("markdown_content"):
-                    doc["markdown_content"] = parse_craft_markdown(doc["markdown_content"])
-                # Set empty path fields for consistency
                 doc.setdefault('folder_path', None)
                 doc.setdefault('folder_id', None)
                 doc.setdefault('location', None)
