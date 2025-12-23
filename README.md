@@ -8,16 +8,47 @@ A reliable Python-based connector that synchronizes data from Teamwork (tasks), 
 - **[ENV_VARIABLES.md](ENV_VARIABLES.md)** - Complete environment variables reference
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Technical architecture and design decisions
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     EXTERNAL APIS                           │
+│  ┌───────────┐    ┌───────────┐    ┌───────────┐            │
+│  │ Teamwork  │    │  Missive  │    │   Craft   │            │
+│  │ Webhooks  │    │ Webhooks  │    │   (Poll)  │            │
+│  └─────┬─────┘    └─────┬─────┘    └─────┬─────┘            │
+└────────┼────────────────┼────────────────┼──────────────────┘
+         │                │                │
+         ▼                ▼                ▼
+┌───────────────────┐┌──────────────────┐┌────────────────────┐
+│ Flask Webhooks    ││ Timer Backfill   ││ Craft Poller       │
+└────────┬──────────┘└────────┬─────────┘└──────────┬─────────┘
+         │                    │                     │
+         └────────────────────┼─────────────────────┘
+                              ▼
+                  ┌───────────────────────┐
+                  │   PostgreSQL Queue    │
+                  │ (tm_connector.queue)  │
+                  └───────────┬───────────┘
+                              ▼
+                  ┌───────────────────────┐
+                  │   Worker Dispatcher   │
+                  └───────────┬───────────┘
+                              ▼
+                  ┌───────────────────────┐
+                  │    PostgreSQL DB      │
+                  └───────────────────────┘
+```
+
 ## Features
 
+- **Multi-Source Ingestion**: Unified synchronization for Teamwork (tasks), Missive (emails), and Craft (documentation).
 - **Dual operation modes**:
-  - **Webhook mode** (default): Real-time sync with periodic backfill (60s) as backup
-  - **Polling-only mode**: No webhooks, relies on frequent polling (5s default)
-- **PostgreSQL queue**: Persistent, crash-safe event queue
-- **Database resilience**: Lazy connection with automatic reconnect
-- **ID-to-name mapping**: Tags and users resolved to human-readable names
-- **Date filtering**: Skip old data via `TEAMWORK_PROCESS_AFTER` and `MISSIVE_PROCESS_AFTER`
-- **Auto-categorization**: Database triggers extract locations, cost groups, and task types from tags/labels
+  - **Webhook mode**: Real-time sync using ngrok tunnels or direct exposure.
+  - **Polling-only mode**: Stable sync via periodic backfill for restricted environments.
+- **Resilient Event Queue**: Uses a persistent PostgreSQL-based queue to ensure no events are lost during restarts.
+- **Smart Mappings**: Automatically resolves API IDs (tags, users) to human-readable names before insertion.
+- **Auto-Categorization**: Triggers within the database handle complex mappings to buildings, floors, rooms, and DIN 276 cost groups.
 
 ## Quick Start
 
