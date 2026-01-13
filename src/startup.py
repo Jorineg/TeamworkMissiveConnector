@@ -122,6 +122,12 @@ class StartupManager:
         except Exception as e:
             logger.error(f"Error during Teamwork backfill: {e}", exc_info=True)
         
+        # Backfill Teamwork timelogs (after tasks, since timelogs reference tasks)
+        try:
+            self._backfill_teamwork_timelogs()
+        except Exception as e:
+            logger.error(f"Error during Teamwork timelogs backfill: {e}", exc_info=True)
+        
         # Backfill Missive conversations
         try:
             self._backfill_missive()
@@ -213,6 +219,60 @@ class StartupManager:
         )
         self.db.set_checkpoint(checkpoint)
         logger.info(f"Updated Teamwork checkpoint to {latest_time.isoformat()}")
+    
+    def _backfill_teamwork_timelogs(self):
+        """Backfill Teamwork timelogs (time tracking entries)."""
+        logger.info("Backfilling Teamwork timelogs...")
+        
+        checkpoint = self.db.get_checkpoint("teamwork_timelogs")
+        
+        if checkpoint:
+            since = checkpoint.last_event_time - timedelta(seconds=settings.BACKFILL_OVERLAP_SECONDS)
+            logger.info(f"Fetching Teamwork timelogs updated since {since.isoformat()}")
+        else:
+            # First run - use same cutoff as tasks if set
+            if settings.TEAMWORK_PROCESS_AFTER:
+                try:
+                    since = datetime.strptime(settings.TEAMWORK_PROCESS_AFTER, "%d.%m.%Y")
+                    since = since.replace(tzinfo=timezone.utc)
+                    logger.info(f"First run: fetching Teamwork timelogs since {settings.TEAMWORK_PROCESS_AFTER}")
+                except ValueError:
+                    since = datetime.now(timezone.utc) - timedelta(days=5475)  # 15 years
+                    logger.info("First run: fetching Teamwork timelogs from last 15 years")
+            else:
+                since = datetime.now(timezone.utc) - timedelta(days=5475)  # 15 years
+                logger.info("First run: fetching Teamwork timelogs from last 15 years")
+        
+        timelogs = self.teamwork_client.get_timelogs_updated_since(since)
+        logger.info(f"Found {len(timelogs)} Teamwork timelogs to backfill")
+        
+        # Direct upsert (no queue needed - timelogs are simple)
+        for timelog in timelogs:
+            try:
+                self.db.upsert_tw_timelog(timelog)
+            except Exception as e:
+                logger.error(f"Error upserting timelog {timelog.get('id')}: {e}", exc_info=True)
+        
+        # Update checkpoint
+        latest_time = datetime.now(timezone.utc)
+        if timelogs:
+            for tl in timelogs:
+                for field in ("dateEdited", "dateCreated", "timeLogged"):
+                    if tl.get(field):
+                        try:
+                            tl_time = datetime.fromisoformat(tl[field].replace("Z", "+00:00"))
+                            if tl_time > latest_time:
+                                latest_time = tl_time
+                            break
+                        except (ValueError, AttributeError):
+                            pass
+        
+        checkpoint = Checkpoint(
+            source="teamwork_timelogs",
+            last_event_time=latest_time
+        )
+        self.db.set_checkpoint(checkpoint)
+        logger.info(f"Updated Teamwork timelogs checkpoint to {latest_time.isoformat()}")
     
     def _backfill_missive(self):
         """Backfill Missive conversations."""

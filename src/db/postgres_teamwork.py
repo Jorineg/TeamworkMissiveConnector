@@ -469,4 +469,80 @@ class PostgresTeamworkOps:
         except Exception as e:
             self.conn.rollback()
             logger.error(f"Failed to link user teams: {e}", exc_info=True)
+    
+    def upsert_tw_timelog(self, timelog_data: Dict[str, Any]) -> None:
+        """Upsert a Teamwork timelog."""
+        try:
+            timelog_id = int(timelog_data.get("id"))
+            
+            # Extract IDs from nested objects or direct fields
+            task_id = self._extract_id(timelog_data.get("task") or timelog_data.get("taskId"))
+            project_id = self._extract_id(timelog_data.get("project") or timelog_data.get("projectId"))
+            user_id = self._extract_id(timelog_data.get("user") or timelog_data.get("userId"))
+            logged_by_user_id = self._extract_id(timelog_data.get("loggedByUser") or timelog_data.get("loggedByUserId"))
+            deleted_by_user_id = self._extract_id(timelog_data.get("deletedByUser") or timelog_data.get("deletedByUserId"))
+            edited_by_user_id = self._extract_id(timelog_data.get("editedByUser") or timelog_data.get("editedByUserId"))
+            invoice_id = self._extract_id(timelog_data.get("projectBillingInvoice") or timelog_data.get("projectBillingInvoiceId"))
+            
+            # Validate foreign keys
+            task_id = self._validate_fk_exists("teamwork.tasks", task_id)
+            project_id = self._validate_fk_exists("teamwork.projects", project_id)
+            user_id = self._validate_fk_exists("teamwork.users", user_id)
+            logged_by_user_id = self._validate_fk_exists("teamwork.users", logged_by_user_id)
+            deleted_by_user_id = self._validate_fk_exists("teamwork.users", deleted_by_user_id)
+            edited_by_user_id = self._validate_fk_exists("teamwork.users", edited_by_user_id)
+            
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO teamwork.timelogs (
+                        id, task_id, project_id, user_id, logged_by_user_id, minutes,
+                        description, time_logged, has_start_time, is_billable,
+                        deleted, deleted_at, deleted_by_user_id,
+                        edited_at, edited_by_user_id, invoice_id, created_at, raw_data
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (id) DO UPDATE SET
+                        task_id = EXCLUDED.task_id,
+                        project_id = EXCLUDED.project_id,
+                        user_id = EXCLUDED.user_id,
+                        logged_by_user_id = EXCLUDED.logged_by_user_id,
+                        minutes = EXCLUDED.minutes,
+                        description = EXCLUDED.description,
+                        time_logged = EXCLUDED.time_logged,
+                        has_start_time = EXCLUDED.has_start_time,
+                        is_billable = EXCLUDED.is_billable,
+                        deleted = EXCLUDED.deleted,
+                        deleted_at = EXCLUDED.deleted_at,
+                        deleted_by_user_id = EXCLUDED.deleted_by_user_id,
+                        edited_at = EXCLUDED.edited_at,
+                        edited_by_user_id = EXCLUDED.edited_by_user_id,
+                        invoice_id = EXCLUDED.invoice_id,
+                        raw_data = EXCLUDED.raw_data,
+                        db_updated_at = NOW()
+                """, (
+                    timelog_id,
+                    task_id,
+                    project_id,
+                    user_id,
+                    logged_by_user_id,
+                    timelog_data.get("minutes", 0),
+                    timelog_data.get("description"),
+                    self._parse_dt(timelog_data.get("timeLogged")),
+                    timelog_data.get("hasStartTime"),
+                    timelog_data.get("billable") or timelog_data.get("isBillable"),
+                    timelog_data.get("deleted", False),
+                    self._parse_dt(timelog_data.get("dateDeleted") or timelog_data.get("deletedAt")),
+                    deleted_by_user_id,
+                    self._parse_dt(timelog_data.get("dateEdited") or timelog_data.get("editedAt")),
+                    edited_by_user_id,
+                    invoice_id,
+                    self._parse_dt(timelog_data.get("dateCreated") or timelog_data.get("createdAt")),
+                    Json(timelog_data)
+                ))
+                self.conn.commit()
+                logger.debug(f"Upserted timelog {timelog_id}")
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Failed to upsert timelog: {e}", exc_info=True)
 

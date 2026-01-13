@@ -204,6 +204,53 @@ class TeamworkClient:
         logger.info(f"Total companies fetched: {len(companies)}")
         return companies
 
+    def get_timelogs_updated_since(self, since: datetime) -> List[Dict[str, Any]]:
+        """
+        Get all timelogs updated since a given datetime.
+
+        Args:
+            since: Datetime to fetch timelogs from
+
+        Returns:
+            List of timelog dictionaries
+        """
+        timelogs = []
+        page = 1
+        page_size = 100
+
+        since_utc = since.astimezone(timezone.utc) if since.tzinfo else since.replace(tzinfo=timezone.utc)
+        updated_after = since_utc.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+        while True:
+            try:
+                params = {
+                    "page": page,
+                    "pageSize": page_size,
+                    "updatedAfter": updated_after,
+                    "showDeleted": "true",
+                    "includeArchivedProjects": "true"
+                }
+
+                response = self._request("GET", "/projects/api/v3/time.json", params=params)
+
+                if response and "timelogs" in response:
+                    batch = response["timelogs"]
+                    timelogs.extend(batch)
+
+                    logger.info(f"Fetched {len(batch)} timelogs from Teamwork (page {page})")
+
+                    if len(batch) < page_size:
+                        break
+                    page += 1
+                else:
+                    break
+
+            except Exception as e:
+                logger.error(f"Error fetching timelogs from Teamwork: {e}", exc_info=True)
+                break
+
+        return timelogs
+
     def build_task_web_url(self, task_id: str) -> str:
         """Best-effort construction of a human web URL to the task."""
         base = settings.TEAMWORK_BASE_URL.rstrip("/")
