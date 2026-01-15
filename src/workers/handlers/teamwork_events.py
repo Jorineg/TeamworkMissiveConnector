@@ -1,12 +1,31 @@
 """Teamwork event handler."""
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Set, Tuple
 
 from src.db.models import Task
 from src.db.interface import DatabaseInterface
 from src.connectors.teamwork_client import TeamworkClient
 from src.logging_conf import logger
 from src import settings
+
+
+# Module-level sync filter cache (shared across instances)
+_sync_filters_cache: Tuple[Set[int], Set[int]] = (set(), set())
+
+
+def refresh_sync_filters(db: DatabaseInterface) -> Tuple[Set[int], Set[int]]:
+    """Refresh the sync filters cache from database."""
+    global _sync_filters_cache
+    if hasattr(db, 'get_sync_filters'):
+        _sync_filters_cache = db.get_sync_filters()
+        if _sync_filters_cache[0] or _sync_filters_cache[1]:
+            logger.info(f"Sync filters loaded: {len(_sync_filters_cache[0])} companies, {len(_sync_filters_cache[1])} projects excluded")
+    return _sync_filters_cache
+
+
+def get_sync_filters() -> Tuple[Set[int], Set[int]]:
+    """Get current sync filters (excluded_company_ids, excluded_project_ids)."""
+    return _sync_filters_cache
 
 
 class TeamworkEventHandler:
@@ -53,6 +72,11 @@ class TeamworkEventHandler:
         # Check if task should be filtered based on created date
         if self._should_filter_by_date(task_data):
             logger.info(f"Task {task_id} filtered: created before TEAMWORK_PROCESS_AFTER threshold")
+            return None
+        
+        # Check if task should be filtered based on sync exclusions
+        if self._should_filter_by_exclusion(task_data, included):
+            logger.info(f"Task {task_id} filtered: project or company is in sync exclusion list")
             return None
         
         # Upsert all related entities from included resources (in dependency order)
@@ -476,4 +500,48 @@ class TeamworkEventHandler:
         except (ValueError, AttributeError) as e:
             logger.warning(f"Error parsing dates for filtering: {e}")
             return False
+    
+    def _should_filter_by_exclusion(self, task_data: Dict[str, Any], included: Dict[str, Any]) -> bool:
+        """
+        Check if task should be filtered based on sync exclusion settings.
+        
+        Args:
+            task_data: Task data from API
+            included: Included resources (projects, tasklists, etc.)
+        
+        Returns:
+            True if task should be filtered (skipped), False otherwise
+        """
+        excluded_companies, excluded_projects = get_sync_filters()
+        if not excluded_companies and not excluded_projects:
+            return False
+        
+        # Get project ID from task
+        project_id = None
+        if task_data.get("tasklist") and isinstance(task_data["tasklist"], dict):
+            tasklist_id = str(task_data["tasklist"].get("id", ""))
+            if tasklist_id and "tasklists" in included:
+                tasklist_data = included["tasklists"].get(tasklist_id, {})
+                if tasklist_data.get("project") and isinstance(tasklist_data["project"], dict):
+                    project_id = tasklist_data["project"].get("id")
+        
+        if project_id:
+            try:
+                project_id = int(project_id)
+                # Check if project is directly excluded
+                if project_id in excluded_projects:
+                    return True
+                
+                # Check if project's company is excluded
+                if excluded_companies and "projects" in included:
+                    project_data = included["projects"].get(str(project_id), {})
+                    company_ref = project_data.get("company")
+                    if company_ref:
+                        company_id = company_ref.get("id") if isinstance(company_ref, dict) else company_ref
+                        if company_id and int(company_id) in excluded_companies:
+                            return True
+            except (ValueError, TypeError):
+                pass
+        
+        return False
 

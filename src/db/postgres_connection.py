@@ -362,3 +362,30 @@ class PostgresConnection:
         except Exception as e:
             logger.error(f"Error converting timestamp {timestamp}: {e}")
             return None
+    
+    def get_sync_filters(self) -> tuple[set[int], set[int]]:
+        """
+        Fetch sync exclusion filters from app_settings.
+        
+        Returns:
+            Tuple of (excluded_company_ids, excluded_project_ids) as sets
+        """
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        COALESCE(body->'excluded_tw_company_ids', '[]'::jsonb),
+                        COALESCE(body->'excluded_tw_project_ids', '[]'::jsonb)
+                    FROM public.app_settings
+                    WHERE lock = 'X'
+                """)
+                row = cur.fetchone()
+                if row:
+                    import json
+                    company_ids = set(row[0]) if row[0] else set()
+                    project_ids = set(row[1]) if row[1] else set()
+                    return company_ids, project_ids
+                return set(), set()
+        except Exception as e:
+            logger.error(f"Error fetching sync filters: {e}")
+            return set(), set()

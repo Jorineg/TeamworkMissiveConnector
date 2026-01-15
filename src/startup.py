@@ -16,6 +16,7 @@ from src.connectors.missive_client import MissiveClient
 from src.connectors.craft_client import CraftClient
 from src.webhooks.teamwork_webhooks import TeamworkWebhookManager
 from src.webhooks.missive_webhooks import MissiveWebhookManager
+from src.workers.handlers.teamwork_events import refresh_sync_filters
 
 
 class StartupManager:
@@ -115,6 +116,9 @@ class StartupManager:
     def perform_backfill(self):
         """Perform startup backfill to catch missed events."""
         logger.info("Starting backfill operation...")
+        
+        # Refresh sync filters from database
+        refresh_sync_filters(self.db)
         
         # Backfill Teamwork tasks
         try:
@@ -246,12 +250,25 @@ class StartupManager:
         timelogs = self.teamwork_client.get_timelogs_updated_since(since)
         logger.info(f"Found {len(timelogs)} Teamwork timelogs to backfill")
         
+        # Get sync filters for filtering
+        from src.workers.handlers.teamwork_events import get_sync_filters
+        excluded_companies, excluded_projects = get_sync_filters()
+        
         # Direct upsert (no queue needed - timelogs are simple)
+        skipped = 0
         for timelog in timelogs:
             try:
+                # Check if timelog's project is excluded
+                project_id = timelog.get("projectId") or (timelog.get("project", {}) or {}).get("id")
+                if project_id and int(project_id) in excluded_projects:
+                    skipped += 1
+                    continue
                 self.db.upsert_tw_timelog(timelog)
             except Exception as e:
                 logger.error(f"Error upserting timelog {timelog.get('id')}: {e}", exc_info=True)
+        
+        if skipped:
+            logger.info(f"Skipped {skipped} timelogs due to sync exclusion filters")
         
         # Update checkpoint
         latest_time = datetime.now(timezone.utc)
