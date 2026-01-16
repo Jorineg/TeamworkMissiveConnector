@@ -49,4 +49,10 @@ services:
       # === OPTIONAL: Logging (Betterstack) ===
       - BETTERSTACK_SOURCE_TOKEN=${BETTERSTACK_SOURCE_TOKEN:-}
       - BETTERSTACK_INGEST_HOST=${BETTERSTACK_INGEST_HOST:-}
+    networks:
+      - supabase_default
+
+networks:
+  supabase_default:
+    external: true
 
