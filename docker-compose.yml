@@ -18,6 +18,11 @@ services:
       - CRAFT_BASE_URL=${CRAFT_BASE_URL:-}
       - CRAFT_API_MODE=${CRAFT_API_MODE:-multi_document}
       
+      # === OPTIONAL: Supabase Storage (Craft media hosting) ===
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_PUBLIC_URL=${SUPABASE_PUBLIC_URL:-}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-}
+      
       # === OPTIONAL: Webhooks ===
       - DISABLE_WEBHOOKS=${DISABLE_WEBHOOKS:-false}
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}

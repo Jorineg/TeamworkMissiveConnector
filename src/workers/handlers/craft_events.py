@@ -5,6 +5,7 @@ from src.logging_conf import logger
 from src.db.interface import DatabaseInterface
 from src.connectors.craft_client import CraftClient
 from src.connectors.craft_markdown_parser import parse_craft_markdown
+from src.connectors.craft_image_handler import process_document_media
 
 
 class CraftEventHandler:
@@ -49,24 +50,28 @@ class CraftEventHandler:
         """
         Handle document update/create event.
         
-        Uses path metadata from payload, only fetches content from API.
+        Uses path metadata from payload, fetches content + JSON blocks from API.
+        Downloads images from Craft and re-hosts them in Supabase Storage.
         """
         if not self.craft_client.is_configured():
             logger.warning("Craft client not configured")
             return None
         
-        # Fetch document content
         raw_content = self.craft_client.get_document_content(doc_id, fetch_metadata=True)
         
         if raw_content is None:
             logger.warning(f"Failed to fetch content for Craft document {doc_id}")
-            # Still save metadata even without content
             raw_content = ""
         
-        # Parse markdown
         parsed_content = parse_craft_markdown(raw_content) if raw_content else None
         
-        # Build document data - use payload metadata + fetched content
+        if parsed_content and "r.craft.do" in (raw_content or ""):
+            json_blocks = self.craft_client.get_document_json(doc_id, fetch_metadata=False)
+            if json_blocks:
+                parsed_content = process_document_media(
+                    doc_id, json_blocks, parsed_content, self.craft_client.session,
+                )
+        
         doc_data = {
             "id": doc_id,
             "title": payload.get("title"),
@@ -80,7 +85,6 @@ class CraftEventHandler:
             "createdAt": payload.get("createdAt"),
         }
         
-        # Upsert to database
         self.db.upsert_craft_document(doc_data)
         logger.info(f"Upserted Craft document {doc_id}: {payload.get('title')}")
         

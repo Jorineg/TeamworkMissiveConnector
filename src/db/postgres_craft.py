@@ -201,45 +201,4 @@ class PostgresCraftOps:
         
         return []
     
-    def search_craft_documents(self, query: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """
-        Full-text search across Craft documents.
-        
-        Args:
-            query: Search query
-            limit: Maximum results to return
-        
-        Returns:
-            List of matching document dicts with relevance ranking
-        """
-        try:
-            with self.conn.cursor() as cur:
-                cur.execute("""
-                    SELECT id, title, 
-                           ts_headline('english', markdown_content, plainto_tsquery('english', %s),
-                                      'MaxWords=50, MinWords=20, StartSel=<<, StopSel=>>') as snippet,
-                           ts_rank(to_tsvector('english', COALESCE(title, '') || ' ' || COALESCE(markdown_content, '')),
-                                   plainto_tsquery('english', %s)) as rank
-                    FROM craft_documents
-                    WHERE is_deleted = FALSE
-                      AND to_tsvector('english', COALESCE(title, '') || ' ' || COALESCE(markdown_content, '')) 
-                          @@ plainto_tsquery('english', %s)
-                    ORDER BY rank DESC
-                    LIMIT %s
-                """, (query, query, query, limit))
-                
-                results = []
-                for row in cur.fetchall():
-                    results.append({
-                        "id": row[0],
-                        "title": row[1],
-                        "snippet": row[2],
-                        "rank": float(row[3])
-                    })
-                return results
-        except Exception as e:
-            logger.error(f"Failed to search Craft documents: {e}", exc_info=True)
-        
-        return []
-
 

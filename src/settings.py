@@ -39,6 +39,11 @@ MISSIVE_PROCESS_AFTER = os.getenv("MISSIVE_PROCESS_AFTER")  # Format: DD.MM.YYYY
 CRAFT_BASE_URL = os.getenv("CRAFT_BASE_URL", "").rstrip("/")
 CRAFT_API_MODE = os.getenv("CRAFT_API_MODE", "multi_document")  # "full_space" or "multi_document"
 
+# Supabase Storage (for Craft image hosting)
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")  # API URL reachable from this process
+SUPABASE_PUBLIC_URL = os.getenv("SUPABASE_PUBLIC_URL", "").rstrip("/")  # Browser-accessible API URL
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+
 # Betterstack settings
 BETTERSTACK_SOURCE_TOKEN = os.getenv("BETTERSTACK_SOURCE_TOKEN")
 BETTERSTACK_INGEST_HOST = os.getenv("BETTERSTACK_INGEST_HOST")  # Optional: custom ingestion host
