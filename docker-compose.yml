@@ -26,8 +26,12 @@ services:
       # === OPTIONAL: Webhooks ===
       - DISABLE_WEBHOOKS=${DISABLE_WEBHOOKS:-false}
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+      - NGROK_DOMAIN=${NGROK_DOMAIN:-}
       - TEAMWORK_WEBHOOK_SECRET=${TEAMWORK_WEBHOOK_SECRET:-}
       - MISSIVE_WEBHOOK_SECRET=${MISSIVE_WEBHOOK_SECRET:-}
+      
+      # === OPTIONAL: Webhook Relay ===
+      - WEBHOOK_RELAY_URL=${WEBHOOK_RELAY_URL:-}
       
       # === OPTIONAL: Date Filtering ===
       - TEAMWORK_PROCESS_AFTER=${TEAMWORK_PROCESS_AFTER:-}
@@ -60,4 +64,3 @@ services:
 networks:
   supabase_default:
     external: true
-

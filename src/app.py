@@ -364,8 +364,29 @@ def stop_worker():
         _worker_dispatcher.running = False
 
 
+def _setup_ngrok_and_webhooks():
+    """Start ngrok tunnel and register webhooks if enabled."""
+    if settings.DISABLE_WEBHOOKS:
+        logger.info("Webhooks disabled. Running in polling-only mode.")
+        return
+
+    from src.startup import StartupManager
+    startup = StartupManager()
+    public_url = startup.start_ngrok()
+
+    if public_url:
+        logger.info(f"Teamwork webhook URL: {public_url}/webhook/teamwork")
+        logger.info(f"Missive webhook URL:  {public_url}/webhook/missive")
+        startup.configure_webhooks(public_url)
+    else:
+        logger.warning("ngrok tunnel not established. Webhooks will not be reachable.")
+
+    # Keep reference so ngrok tunnel stays alive (GC would close it)
+    app._startup_manager = startup
+
+
 def main():
-    """Entry point - starts Flask, worker, and backfill."""
+    """Entry point - starts Flask, worker, ngrok, and backfill."""
     try:
         settings.validate_config()
     except ValueError as e:
@@ -381,6 +402,9 @@ def main():
             "The application will retry connecting when processing requests."
         )
     
+    # Start ngrok and register webhooks
+    _setup_ngrok_and_webhooks()
+    
     # Start queue worker (processes queue items)
     start_worker()
     
@@ -393,6 +417,8 @@ def main():
     finally:
         stop_worker()
         stop_periodic_backfill()
+        if hasattr(app, '_startup_manager'):
+            app._startup_manager.cleanup()
         db_manager.close()
 
 

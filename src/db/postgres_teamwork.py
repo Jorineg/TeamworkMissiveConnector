@@ -411,40 +411,54 @@ class PostgresTeamworkOps:
             logger.error(f"Failed to upsert tasklist: {e}", exc_info=True)
     
     def link_task_tags(self, task_id: str, tag_ids: List[int]) -> None:
-        """Link a task to tags (many-to-many)."""
+        """Link a task to tags (many-to-many). Diff-aware: only touches actually changed rows."""
         try:
             with self.conn.cursor() as cur:
-                # Clear existing links
-                cur.execute("DELETE FROM teamwork.task_tags WHERE task_id = %s", (task_id,))
-                
-                # Insert new links
-                for tag_id in tag_ids:
-                    cur.execute("""
-                        INSERT INTO teamwork.task_tags (task_id, tag_id)
-                        VALUES (%s, %s)
-                        ON CONFLICT DO NOTHING
-                    """, (task_id, tag_id))
-                
+                cur.execute("SELECT tag_id FROM teamwork.task_tags WHERE task_id = %s", (task_id,))
+                existing = {row[0] for row in cur.fetchall()}
+                desired = set(tag_ids)
+
+                to_remove = existing - desired
+                to_add = desired - existing
+
+                if to_remove:
+                    cur.execute(
+                        "DELETE FROM teamwork.task_tags WHERE task_id = %s AND tag_id = ANY(%s)",
+                        (task_id, list(to_remove)),
+                    )
+                for tag_id in to_add:
+                    cur.execute(
+                        "INSERT INTO teamwork.task_tags (task_id, tag_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                        (task_id, tag_id),
+                    )
+
                 self.conn.commit()
         except Exception as e:
             self.conn.rollback()
             logger.error(f"Failed to link task tags: {e}", exc_info=True)
     
     def link_task_assignees(self, task_id: str, user_ids: List[int]) -> None:
-        """Link a task to assignees (many-to-many)."""
+        """Link a task to assignees (many-to-many). Diff-aware: only touches actually changed rows."""
         try:
             with self.conn.cursor() as cur:
-                # Clear existing links
-                cur.execute("DELETE FROM teamwork.task_assignees WHERE task_id = %s", (task_id,))
-                
-                # Insert new links
-                for user_id in user_ids:
-                    cur.execute("""
-                        INSERT INTO teamwork.task_assignees (task_id, user_id)
-                        VALUES (%s, %s)
-                        ON CONFLICT DO NOTHING
-                    """, (task_id, user_id))
-                
+                cur.execute("SELECT user_id FROM teamwork.task_assignees WHERE task_id = %s", (task_id,))
+                existing = {row[0] for row in cur.fetchall()}
+                desired = set(user_ids)
+
+                to_remove = existing - desired
+                to_add = desired - existing
+
+                if to_remove:
+                    cur.execute(
+                        "DELETE FROM teamwork.task_assignees WHERE task_id = %s AND user_id = ANY(%s)",
+                        (task_id, list(to_remove)),
+                    )
+                for user_id in to_add:
+                    cur.execute(
+                        "INSERT INTO teamwork.task_assignees (task_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                        (task_id, user_id),
+                    )
+
                 self.conn.commit()
         except Exception as e:
             self.conn.rollback()

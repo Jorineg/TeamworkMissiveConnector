@@ -269,23 +269,31 @@ class PostgresMissiveOps:
                                 ON CONFLICT DO NOTHING
                             """, (conversation_id, assignee_id))
                 
-                # Handle shared labels
+                # Handle shared labels (diff-aware to avoid triggering project_conversations cascade)
                 if conversation_data.get("shared_labels"):
-                    # Clear existing labels
-                    cur.execute("DELETE FROM missive.conversation_labels WHERE conversation_id = %s", (conversation_id,))
-                    
+                    desired_label_ids = set()
                     for label in conversation_data["shared_labels"]:
                         label_id = label.get("id")
                         if label_id:
-                            # Upsert label
                             self.upsert_m_shared_label(label)
-                            
-                            # Insert into junction table
-                            cur.execute("""
-                                INSERT INTO missive.conversation_labels (conversation_id, label_id)
-                                VALUES (%s, %s)
-                                ON CONFLICT DO NOTHING
-                            """, (conversation_id, label_id))
+                            desired_label_ids.add(label_id)
+
+                    cur.execute("SELECT label_id FROM missive.conversation_labels WHERE conversation_id = %s", (conversation_id,))
+                    existing_label_ids = {row[0] for row in cur.fetchall()}
+
+                    to_remove = existing_label_ids - desired_label_ids
+                    to_add = desired_label_ids - existing_label_ids
+
+                    if to_remove:
+                        cur.execute(
+                            "DELETE FROM missive.conversation_labels WHERE conversation_id = %s AND label_id = ANY(%s)",
+                            (conversation_id, list(to_remove)),
+                        )
+                    for label_id in to_add:
+                        cur.execute(
+                            "INSERT INTO missive.conversation_labels (conversation_id, label_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                            (conversation_id, label_id),
+                        )
                 
                 # Handle authors
                 if conversation_data.get("authors"):

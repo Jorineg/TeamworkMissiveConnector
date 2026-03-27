@@ -63,8 +63,13 @@ class StartupManager:
             conf.get_default().auth_token = settings.NGROK_AUTHTOKEN
             
             # Start tunnel
-            logger.info(f"Starting ngrok tunnel on port {settings.APP_PORT}...")
-            self.ngrok_tunnel = ngrok.connect(settings.APP_PORT, bind_tls=True)
+            connect_kwargs = {"bind_tls": True}
+            if settings.NGROK_DOMAIN:
+                connect_kwargs["hostname"] = settings.NGROK_DOMAIN
+                logger.info(f"Starting ngrok tunnel on port {settings.APP_PORT} with domain {settings.NGROK_DOMAIN}...")
+            else:
+                logger.info(f"Starting ngrok tunnel on port {settings.APP_PORT}...")
+            self.ngrok_tunnel = ngrok.connect(settings.APP_PORT, **connect_kwargs)
             public_url = self.ngrok_tunnel.public_url
             
             logger.info(f"✓ ngrok tunnel established: {public_url}")
@@ -138,7 +143,13 @@ class StartupManager:
         except Exception as e:
             logger.error(f"Error during Missive backfill: {e}", exc_info=True)
         
-        # Backfill Craft documents
+        # Poll webhook relay for Missive conversation IDs (label changes etc.)
+        try:
+            self._poll_webhook_relay()
+        except Exception as e:
+            logger.error(f"Error polling webhook relay: {e}", exc_info=True)
+        
+        # Backfill Craft documents (last — slow due to rate limiting)
         try:
             self._backfill_craft()
         except Exception as e:
@@ -454,6 +465,76 @@ class StartupManager:
         )
         self.db.set_checkpoint(checkpoint)
         logger.info(f"Updated Craft checkpoint to {latest_time.isoformat()}")
+    
+    def _poll_webhook_relay(self):
+        """Poll external webhook relay for Missive conversation IDs (e.g. label changes).
+        Uses checkpoint to only process events newer than the last poll."""
+        if not settings.WEBHOOK_RELAY_URL:
+            return
+
+        import requests
+        try:
+            resp = requests.get(settings.WEBHOOK_RELAY_URL, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            logger.warning(f"Failed to poll webhook relay: {e}")
+            return
+
+        if isinstance(data, list):
+            events = [{"conversation_id": cid, "received_at": None} for cid in data]
+        elif isinstance(data, dict) and "events" in data:
+            events = data["events"]
+        else:
+            return
+
+        if not events:
+            return
+
+        checkpoint = self.db.get_checkpoint("webhook_relay")
+        since = checkpoint.last_event_time if checkpoint else None
+
+        new_events = []
+        max_received = since
+        for ev in events:
+            received_at_str = ev.get("received_at")
+            if not received_at_str or not ev.get("conversation_id"):
+                continue
+            try:
+                received_at = datetime.fromisoformat(received_at_str.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                new_events.append(ev)
+                continue
+            if since and received_at <= since:
+                continue
+            new_events.append(ev)
+            if max_received is None or received_at > max_received:
+                max_received = received_at
+
+        if not new_events:
+            logger.debug(f"Webhook relay: {len(events)} events, all already processed")
+            return
+
+        logger.info(f"Webhook relay returned {len(events)} events, {len(new_events)} new")
+        enqueued = 0
+        for ev in new_events:
+            try:
+                item = QueueItem.create(
+                    source="missive",
+                    event_type="conversation.relay",
+                    external_id=str(ev["conversation_id"]),
+                    payload={},
+                )
+                self.queue.enqueue(item)
+                enqueued += 1
+            except Exception as e:
+                logger.error(f"Error enqueueing relay conversation {ev['conversation_id']}: {e}")
+
+        if enqueued:
+            logger.info(f"Enqueued {enqueued} conversations from webhook relay")
+
+        if max_received:
+            self.db.set_checkpoint(Checkpoint(source="webhook_relay", last_event_time=max_received))
     
     def cleanup(self):
         """Cleanup resources."""

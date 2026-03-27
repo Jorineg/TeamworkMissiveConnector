@@ -22,6 +22,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # ngrok settings
 NGROK_AUTHTOKEN = os.getenv("NGROK_AUTHTOKEN")
+NGROK_DOMAIN = os.getenv("NGROK_DOMAIN")  # Static ngrok domain (e.g. "myapp.ngrok-free.dev")
 
 # Teamwork settings
 TEAMWORK_BASE_URL = os.getenv("TEAMWORK_BASE_URL", "").rstrip("/")
@@ -53,6 +54,9 @@ TIMEZONE = os.getenv("TIMEZONE", "Europe/Berlin")
 
 # Webhook settings
 DISABLE_WEBHOOKS = os.getenv("DISABLE_WEBHOOKS", "false").lower() in ("true", "1", "yes")
+
+# Webhook relay (external service that receives Missive webhooks and queues conversation IDs)
+WEBHOOK_RELAY_URL = os.getenv("WEBHOOK_RELAY_URL")  # e.g. "https://hetzner-host/pending-ids"
 
 # Periodic backfill settings
 # Default: 5 seconds when webhooks disabled, 60 seconds when enabled

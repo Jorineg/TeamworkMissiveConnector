@@ -4,8 +4,14 @@ Craft media URLs (r.craft.do) are temporary and rotate on each API fetch.
 This module downloads images, files, drawings, and videos via the fresh URLs
 from the JSON blocks API, uploads them to a `craft-files` Supabase Storage
 bucket, and replaces the Craft URLs in the markdown with stable self-hosted URLs.
+
+Deduplication: storage paths use a content hash prefix instead of the volatile
+block ID, so identical files are uploaded only once.
 """
+import hashlib
+import re
 import time
+import unicodedata
 from typing import Dict, List, Optional, Tuple
 
 import requests
@@ -53,38 +59,28 @@ def process_document_media(
 
     for block in media_blocks:
         craft_url = block.get("url")
-        block_id = block.get("id")
-        if not craft_url or not block_id:
+        if not craft_url or not block.get("id"):
             continue
 
         if (block.get("fileSize") or 0) > MAX_FILE_SIZE:
-            logger.info("Skipping large craft file %s (%d bytes)", block.get("fileName", block_id), block.get("fileSize"))
-            continue
-
-        storage_path = _build_storage_path(doc_id, block, None)
-        public_url = f"{public_base}/storage/v1/object/public/{BUCKET}/{storage_path}"
-
-        if _asset_exists_in_storage(storage_path, session):
-            url_mapping[craft_url] = public_url
+            logger.info("Skipping large craft file %s (%d bytes)", block.get("fileName", block["id"]), block.get("fileSize"))
             continue
 
         data, content_type = _download(craft_url, session)
         if not data:
             continue
 
-        # Recompute path with actual content type if block had no mime/filename
-        final_path = _build_storage_path(doc_id, block, content_type)
-        if final_path != storage_path:
-            if _asset_exists_in_storage(final_path, session):
-                url_mapping[craft_url] = f"{public_base}/storage/v1/object/public/{BUCKET}/{final_path}"
-                continue
-            storage_path = final_path
-
+        content_hash = hashlib.sha256(data).hexdigest()[:16]
+        storage_path = _build_storage_path(doc_id, block, content_type, content_hash)
         public_url = f"{public_base}/storage/v1/object/public/{BUCKET}/{storage_path}"
+
+        if _asset_exists_in_storage(storage_path, session):
+            url_mapping[craft_url] = public_url
+            continue
 
         if _upload_to_storage(storage_path, data, content_type or "application/octet-stream", session):
             url_mapping[craft_url] = public_url
-            logger.debug("Uploaded craft %s %s → %s", block.get("type"), block_id, storage_path)
+            logger.debug("Uploaded craft %s %s → %s", block.get("type"), block["id"], storage_path)
 
         time.sleep(0.05)
 
@@ -101,19 +97,33 @@ def _extract_media_blocks(node: dict) -> List[dict]:
         results.append(node)
     for child in node.get("content", []):
         results.extend(_extract_media_blocks(child))
+    for item in node.get("items", []):
+        results.extend(_extract_media_blocks(item))
     return results
 
 
-def _build_storage_path(doc_id: str, block: dict, content_type: Optional[str]) -> str:
-    """Build storage path: {doc_id}/{block_id}_{filename} or {doc_id}/{block_id}.{ext}."""
-    block_id = block["id"]
+_UMLAUT_MAP = str.maketrans({
+    "ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
+    "Ä": "Ae", "Ö": "Oe", "Ü": "Ue",
+})
+
+
+def _sanitize_storage_name(name: str) -> str:
+    """Transliterate non-ASCII chars to ASCII for Supabase Storage compatibility."""
+    name = name.translate(_UMLAUT_MAP)
+    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    name = re.sub(r"[^\w.\-]", "_", name)
+    return re.sub(r"_{2,}", "_", name)
+
+
+def _build_storage_path(doc_id: str, block: dict, content_type: Optional[str], content_hash: str) -> str:
+    """Build storage path: {doc_id}/{hash}_{filename} or {doc_id}/{hash}.{ext}."""
     file_name = block.get("fileName")
     if file_name:
-        safe_name = file_name.replace("/", "_").replace("\\", "_")
-        return f"{doc_id}/{block_id}_{safe_name}"
+        return f"{doc_id}/{content_hash}_{_sanitize_storage_name(file_name)}"
 
     ext = _mime_to_ext(block.get("mimeType") or content_type)
-    return f"{doc_id}/{block_id}.{ext}"
+    return f"{doc_id}/{content_hash}.{ext}"
 
 
 def _mime_to_ext(mime: Optional[str]) -> str:
