@@ -40,6 +40,10 @@ class WebhookConfigManager:
                     return row[0]  # JSONB is automatically deserialized
                 return None
         except Exception as e:
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
             logger.error(f"Failed to get webhook IDs for {source}: {e}", exc_info=True)
             return None
     

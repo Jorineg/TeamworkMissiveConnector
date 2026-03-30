@@ -315,6 +315,7 @@ class PostgresMissiveOps:
         except Exception as e:
             self.conn.rollback()
             logger.error(f"Failed to upsert Missive conversation: {e}", exc_info=True)
+            raise
     
     def upsert_m_message(self, message_data: Dict[str, Any], conversation_id: str) -> None:
         """Upsert a Missive message with all related entities."""
@@ -454,6 +455,7 @@ class PostgresMissiveOps:
         except Exception as e:
             self.conn.rollback()
             logger.error(f"Failed to upsert Missive message: {e}", exc_info=True)
+            raise
 
     def upsert_m_comment(self, comment_data: Dict[str, Any], conversation_id: str) -> None:
         """Upsert a Missive conversation comment with all related entities."""

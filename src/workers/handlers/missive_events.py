@@ -53,12 +53,9 @@ class MissiveEventHandler:
             logger.warning(f"Could not fetch conversation {conversation_id}")
             return None
         
-        # Upsert conversation to relational structure if available
+        # Upsert conversation (raises on failure → dispatcher marks item failed with retry)
         if hasattr(self.db, 'upsert_m_conversation'):
-            try:
-                self.db.upsert_m_conversation(conversation)
-            except Exception as e:
-                logger.error(f"Failed to upsert conversation {conversation_id}: {e}", exc_info=True)
+            self.db.upsert_m_conversation(conversation)
         
         # Handle comment events or backfill - fetch and store all comments for the conversation
         # In polling mode, backfill events should also fetch comments to ensure complete data sync
@@ -91,12 +88,9 @@ class MissiveEventHandler:
                     logger.info(f"Message {message_id} filtered: received before MISSIVE_PROCESS_AFTER threshold")
                     continue
                 
-                # Upsert message to relational structure if available
+                # Upsert message (raises on failure → dispatcher marks item failed with retry)
                 if hasattr(self.db, 'upsert_m_message'):
-                    try:
-                        self.db.upsert_m_message(message_data, conversation_id)
-                    except Exception as e:
-                        logger.error(f"Failed to upsert message {message_id}: {e}", exc_info=True)
+                    self.db.upsert_m_message(message_data, conversation_id)
                 
                 # Create Email object for legacy support
                 email = self._parse_message(message_data, conversation_id, conversation_labels)

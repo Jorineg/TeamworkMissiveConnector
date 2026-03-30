@@ -137,15 +137,17 @@ class PostgresConnection:
         """Ensure we have a valid database connection, reconnecting if necessary."""
         if self._connection_valid and self._conn is not None:
             try:
-                # Quick connection test
                 with self._conn.cursor() as cur:
                     cur.execute("SELECT 1")
                 return
             except Exception as e:
                 logger.warning(f"Connection test failed: {e}")
+                try:
+                    self._conn.rollback()
+                except Exception:
+                    pass
                 self._connection_valid = False
         
-        # Need to reconnect
         logger.info("Reconnecting to PostgreSQL...")
         self._connect()
     
@@ -313,6 +315,10 @@ class PostgresConnection:
                 logger.warning(f"Foreign key {fk_id} not found in {table}, setting to NULL")
                 return None
         except Exception as e:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
             logger.error(f"Error validating foreign key {fk_id} in {table}: {e}")
             return None
     
@@ -321,16 +327,13 @@ class PostgresConnection:
         if not email:
             return None
         
-        # Normalize email to lowercase for consistent comparison and storage
         email = email.lower()
         
         try:
             with self.conn.cursor() as cur:
-                # Try to find existing contact
                 cur.execute("SELECT id FROM missive.contacts WHERE email = %s LIMIT 1", (email,))
                 row = cur.fetchone()
                 if row:
-                    # Update name if provided and different
                     if name:
                         cur.execute("""
                             UPDATE missive.contacts SET name = %s, db_updated_at = NOW()
@@ -338,7 +341,6 @@ class PostgresConnection:
                         """, (name, row[0], name))
                     return row[0]
                 
-                # Create new contact
                 cur.execute("""
                     INSERT INTO missive.contacts (email, name)
                     VALUES (%s, %s)
@@ -346,6 +348,10 @@ class PostgresConnection:
                 """, (email, name))
                 return cur.fetchone()[0]
         except Exception as e:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
             logger.error(f"Error getting/creating contact for {email}: {e}")
             return None
     
@@ -387,5 +393,9 @@ class PostgresConnection:
                     return company_ids, project_ids
                 return set(), set()
         except Exception as e:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
             logger.error(f"Error fetching sync filters: {e}")
             return set(), set()

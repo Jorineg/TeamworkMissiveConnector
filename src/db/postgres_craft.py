@@ -181,6 +181,10 @@ class PostgresCraftOps:
                         "db_updated_at": row[7]
                     }
         except Exception as e:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
             logger.error(f"Failed to get Craft document {doc_id}: {e}", exc_info=True)
         
         return None
@@ -197,6 +201,10 @@ class PostgresCraftOps:
                 cur.execute("SELECT id FROM craft_documents")
                 return [row[0] for row in cur.fetchall()]
         except Exception as e:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
             logger.error(f"Failed to get Craft document IDs: {e}", exc_info=True)
         
         return []

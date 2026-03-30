@@ -193,6 +193,10 @@ class PostgresLegacyOps:
                         last_cursor=row["last_cursor"]
                     )
         except Exception as e:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
             logger.error(f"Failed to get checkpoint for {source}: {e}", exc_info=True)
         return None
     
